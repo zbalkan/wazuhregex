@@ -22,7 +22,10 @@ def main() -> None:
         print("Pattern compiled successfully. Ready for input.", file=sys.stderr)
 
         for line in sys.stdin:
-            text = line.strip()
+            text = line.strip().strip('\n')
+            if not text:
+                continue
+
             print("-" * 40)  # Add a separator for clarity between inputs
 
             # --- Test 1: The OS_Regex Engine ---
@@ -47,6 +50,19 @@ def main() -> None:
                     f"\n\033[1m✅ OSMatch (sregex) Match:\033[0m\n{highlighted_string}")
             else:
                 print("\n\033[1m❌ OSMatch (sregex) No Match\033[0m")
+
+            # --- Test 3: The PCRE2 Regex Engine ---
+            is_match, spans = wazuh_tool.pcre2_regex(text)
+            if is_match:
+                highlighted_string = highlighter.apply(text, spans)
+                print(
+                    f"\n\033[1m✅ PCRE2 Match:\033[0m\n{highlighted_string}")
+                substrings = wazuh_tool.get_substrings()
+                if substrings:
+                    for sub in substrings:
+                        print(f"  - Substring: {sub}")
+            else:
+                print("\n\033[1m❌ PCRE2 No Match\033[0m")
 
 
 if __name__ == "__main__":

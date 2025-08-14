@@ -1,6 +1,7 @@
-import re
 from types import TracebackType
-from typing import Final, List, Optional, Pattern, Tuple, Type
+from typing import Final, List, Optional, Tuple, Type
+
+import pcre2
 
 
 class WazuhRegex:
@@ -35,10 +36,8 @@ class WazuhRegex:
           may succeed here when they would fail in Wazuh.
     """
 
-    _INVALID_GROUP_ALTERNATION: Final[Pattern[str]] = re.compile(
-        r'\([^)]*\|[^)]*\)')
-    _INVALID_MODIFIER_USE: Final[Pattern[str]
-                                 ] = re.compile(r'(?<!\\[wdspWDSP\.])[*+]')
+    _INVALID_GROUP_ALTERNATION = pcre2.compile(r'\([^)]*\|[^)]*\)', flags=pcre2.U, jit=True)
+    _INVALID_MODIFIER_USE = pcre2.compile(r'(?<!\\[wdspWDSP\.])[*+]')
 
     # Centralized translation rules. The order is critical for correctness.
     _TRANSLATION_RULES: Final[List[Tuple[str, str]]] = [
@@ -65,9 +64,9 @@ class WazuhRegex:
         Performs compilation and validation upon entering the 'with' block.
         Returns the instance of itself.
         """
-        self._os_regex_compiled: Pattern[str] | None = None
-        self._os_match_compiled: List[Tuple[str, str, bool]] = []
-        self._last_os_regex_substrings: List[str] = []
+        self._os_regex_compiled = None
+        self._os_match_compiled = []
+        self._last_os_regex_substrings = []
         return self
 
     def __exit__(self, exc_type: Optional[Type[BaseException]],
@@ -93,8 +92,8 @@ class WazuhRegex:
             translation = translation.replace(old, new)
 
         try:
-            self._os_regex_compiled = re.compile(translation, re.IGNORECASE)
-        except re.error as e:
+            self._os_regex_compiled = pcre2.compile(translation, pcre2.IGNORECASE)
+        except Exception as e:
             error_msg = (
                 f"Pattern '{pattern}' failed to compile.\n"
                 f"Translated Python pattern: '{translation}'\n"
@@ -120,7 +119,7 @@ class WazuhRegex:
         if not self._os_regex_compiled:
             return False, []
 
-        match: Optional[re.Match[str]] = self._os_regex_compiled.search(text)
+        match: Optional[pcre2.Match] = self._os_regex_compiled.search(text)
 
         if not match:
             return False, []
@@ -200,3 +199,20 @@ class WazuhRegex:
 
         final_match = not match_found if is_negated_rule else match_found
         return final_match, match_spans if final_match else []
+
+    def pcre2_regex(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
+
+        pcre2_pattern: pcre2.Pattern
+
+        try:
+            pcre2_pattern = pcre2.compile(self._raw_pattern, flags=pcre2.U, jit=True)
+            pcre2_pattern.jit_compile()
+        except (ValueError, TypeError):
+            return False, []
+
+        match = pcre2_pattern.search(text)
+        if not match:
+            return False, []
+
+        self._last_os_regex_substrings = list(match.groups())
+        return True, [match.span()]
