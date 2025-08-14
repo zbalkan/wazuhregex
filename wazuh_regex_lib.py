@@ -44,6 +44,12 @@ class WazuhRegex:
         # In Wazuh regex, `\*` must not be escaped. We must mark it invalid for Python's `re`.
         translation = translation.replace(r'\*', r'\\*')
 
+        # The Wazuh C unit tests confirm that `[(...)]` is valid syntax
+        # meaning a capturing group `(...)` surrounded by literal brackets `[]`.
+        # We must translate this to `\[(...)\]` for Python's `re` engine.
+        translation = translation.replace(r'[(', r'\[(')
+        translation = translation.replace(r')]', r')\]')
+
         try:
             # Compile with the IGNORECASE flag to match OSRegex's default behavior.
             self._os_regex_compiled = re.compile(translation, re.IGNORECASE)
