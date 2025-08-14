@@ -1,5 +1,6 @@
 import re
-from typing import Final, List, Optional, Pattern, Tuple
+from types import TracebackType
+from typing import Final, List, Optional, Pattern, Tuple, Type
 
 
 class WazuhRegex:
@@ -58,9 +59,25 @@ class WazuhRegex:
 
     def __init__(self, pattern: str) -> None:
         self._raw_pattern: str = pattern
+
+    def __enter__(self) -> 'WazuhRegex':
+        """
+        Performs compilation and validation upon entering the 'with' block.
+        Returns the instance of itself.
+        """
         self._os_regex_compiled: Pattern[str] | None = None
         self._os_match_compiled: List[Tuple[str, str, bool]] = []
         self._last_os_regex_substrings: List[str] = []
+        return self
+
+    def __exit__(self, exc_type: Optional[Type[BaseException]],
+                 exc_value: Optional[BaseException],
+                 traceback: Optional[TracebackType]) -> None:
+        """
+        Handles cleanup upon exiting the 'with' block.
+        (No specific cleanup needed, but implemented for protocol correctness).
+        """
+        pass
 
     def _os_regex_compile(self, pattern: str) -> None:
         if self._INVALID_GROUP_ALTERNATION.search(pattern):
