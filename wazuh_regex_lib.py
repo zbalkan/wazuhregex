@@ -1,5 +1,3 @@
-# wazuh_regex_lib.py
-
 import re
 from typing import Final, List, Optional, Pattern, Tuple
 
@@ -87,7 +85,7 @@ class WazuhRegex:
             )
             raise ValueError(error_msg)
 
-    def os_regex_execute(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
+    def os_regex(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """
         Emulates OSRegex_Execute.
         Returns a boolean and a list of (start, end) tuples for matches.
@@ -144,7 +142,7 @@ class WazuhRegex:
                 self._os_match_compiled.append(
                     ("_substring_search", clean_sub, is_negated))
 
-    def os_match_execute(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
+    def os_match(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """
         Emulates OSMatch_Execute (sregex).
         Returns a boolean and a list of (start, end) tuples for matches.

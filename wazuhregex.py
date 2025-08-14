@@ -31,7 +31,7 @@ def main() -> None:
 
         # --- Test 1: The OS_Regex Engine ---
         # This is the main, powerful regex engine that captures substrings.
-        is_match, spans = wazuh_tool.os_regex_execute(text)
+        is_match, spans = wazuh_tool.os_regex(text)
         if is_match:
             highlighted_string = highlighter.apply(text, spans)
             print(f"\n\033[1m✅ OSRegex Match:\033[0m\n{highlighted_string}")
@@ -44,7 +44,7 @@ def main() -> None:
 
         # --- Test 2: The OS_Match (sregex) Engine ---
         # This is the fast, simple string matching engine.
-        is_match, spans = wazuh_tool.os_match_execute(text)
+        is_match, spans = wazuh_tool.os_match(text)
         if is_match:
             highlighted_string = highlighter.apply(text, spans)
             print(
