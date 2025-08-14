@@ -163,7 +163,7 @@ EXTRACTION_DATA = [
     (r"123(\w+\s+)abc", "123sdf    abc", ["sdf    "]),
     (r"123(\w+\s+)abc", "abc123sdf    abc", ["sdf    "]),
     (r"123 (\d+.\d.\d.\d\d*\d*)", "123 45.6.5.567", ["45.6.5.567"]),
-    (r"from (\S*\\d+.\\d+.\\d+.\\d\\d*\\d*)",
+    (r"from (\S*\d+.\d+.\d+.\d\d*\d*)",
      "sshd[21576]: Illegal user web14 from ::ffff:212.227.60.55", ["::ffff:212.227.60.55"]),
     (r"^sshd\[\d+\]: Accepted \S+ for (\S+) from (\S+) port ",
      "sshd[21405]: Accepted password for root from 192.1.1.1 port 6023", ["root", "192.1.1.1"]),
