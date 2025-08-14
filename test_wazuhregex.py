@@ -1,8 +1,6 @@
-# test_wazuh_regex.py
-
 import pytest
 
-from wazuh_regex_lib import WazuhRegex, os_match2, os_regex
+from wazuh_regex_lib import WazuhRegex
 
 # --- Data from C unit tests ---
 
@@ -59,7 +57,7 @@ FAIL_MATCH_DATA = [
 ]
 
 # Data for: test_success_regex (uses OS_Regex)
-SUCCESS_REGEX_DATA = [
+SUCCESS_REGEX_DATA: list[tuple[str, str]] = [
     ("", ""),
     ("", "a"),
     ("abc", "abcd"),
@@ -128,7 +126,7 @@ SUCCESS_REGEX_DATA = [
 ]
 
 # Data for: test_fail_regex (uses OS_Regex)
-FAIL_REGEX_DATA = [
+FAIL_REGEX_DATA: list[tuple[str, str]] = [
     ("abc", "abb"),
     ("^ab", " ab"),
     ("^$", "a"),
@@ -159,7 +157,7 @@ FAIL_REGEX_DATA = [
 ]
 
 # Data for: test_regex_extraction
-EXTRACTION_DATA = [
+EXTRACTION_DATA: list[tuple[str, str, list[str]]] = [
     (r"123(\w+\s+)abc", "123sdf    abc", ["sdf    "]),
     (r"123(\w+\s+)abc", "abc123sdf    abc", ["sdf    "]),
     (r"123 (\d+.\d.\d.\d\d*\d*)", "123 45.6.5.567", ["45.6.5.567"]),
@@ -171,34 +169,32 @@ EXTRACTION_DATA = [
      ["?", "enigma.lab.ossec.net"]),
 ]
 
-# --- Pytest Test Functions ---
-
 
 @pytest.mark.parametrize("pattern, text", SUCCESS_MATCH_DATA)
 def test_osmatch_success(pattern: str, text: str) -> None:
     """Replicates test_success_match from the C tests."""
-    is_match, _ = os_match2(pattern, text)
+    is_match, _ = WazuhRegex(pattern).os_match_execute(text)
     assert is_match is True
 
 
 @pytest.mark.parametrize("pattern, text", FAIL_MATCH_DATA)
 def test_osmatch_fail(pattern: str, text: str) -> None:
     """Replicates test_fail_match from the C tests."""
-    is_match, _ = os_match2(pattern, text)
+    is_match, _ = WazuhRegex(pattern).os_match_execute(text)
     assert is_match is False
 
 
 @pytest.mark.parametrize("pattern, text", SUCCESS_REGEX_DATA)
 def test_osregex_success(pattern: str, text: str) -> None:
     """Replicates test_success_regex from the C tests."""
-    is_match, _ = os_regex(pattern, text)
+    is_match, _ = WazuhRegex(pattern).os_regex_execute(text)
     assert is_match is True
 
 
 @pytest.mark.parametrize("pattern, text", FAIL_REGEX_DATA)
 def test_osregex_fail(pattern: str, text: str) -> None:
     """Replicates test_fail_regex from the C tests."""
-    is_match, _ = os_regex(pattern, text)
+    is_match, _ = WazuhRegex(pattern).os_regex_execute(text)
     assert is_match is False
 
 

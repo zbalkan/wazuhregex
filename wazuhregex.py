@@ -4,7 +4,7 @@ import os
 import sys
 
 from highlighter import Highlighter
-from wazuh_regex_lib import WazuhRegex, os_match2, os_regex
+from wazuh_regex_lib import WazuhRegex
 
 
 def main() -> None:
@@ -13,52 +13,44 @@ def main() -> None:
         sys.exit(1)
 
     pattern = sys.argv[1]
-
-    # --- Application Setup ---
-
-    # Check for NO_COLOR environment variable
     no_color: bool = (os.getenv("NO_COLOR") is not None)
-
-    # The application decides which color to use.
-    highlighter = Highlighter(highlight_color=Highlighter.RED, no_color=no_color)
+    highlighter = Highlighter(
+        highlight_color=Highlighter.RED, no_color=no_color)
 
     try:
+        # The wazuh_tool object holds the compiled state for both engines.
         wazuh_tool = WazuhRegex(pattern)
-        print("wazuhregex tool initialized. Ready for input.", file=sys.stderr)
+        print("Pattern compiled successfully. Ready for input.", file=sys.stderr)
     except (ValueError, TypeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     for line in sys.stdin:
         text = line.strip()
+        print("-" * 40)  # Add a separator for clarity between inputs
 
-        # 1. Test OSRegex_Execute
+        # --- Test 1: The OS_Regex Engine ---
+        # This is the main, powerful regex engine that captures substrings.
         is_match, spans = wazuh_tool.os_regex_execute(text)
         if is_match:
             highlighted_string = highlighter.apply(text, spans)
-            print(
-                f"\n\033[1m+OSRegex_Execute:\033[0m\n{highlighted_string}")
+            print(f"\n\033[1m✅ OSRegex Match:\033[0m\n{highlighted_string}")
             substrings = wazuh_tool.get_substrings()
-            for sub in substrings:
-                print(f" -Substring:\n{sub}")
+            if substrings:
+                for sub in substrings:
+                    print(f"  - Substring: {sub}")
+        else:
+            print("\n\033[1m❌ OSRegex No Match\033[0m")
 
-        # 2. Test OS_Regex (stateless wrapper)
-        is_match, spans = os_regex(pattern, text)
-        if is_match:
-            highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m+OS_Regex       :\033[0m\n{highlighted_string}")
-
-        # 3. Test OSMatch_Execute
+        # --- Test 2: The OS_Match (sregex) Engine ---
+        # This is the fast, simple string matching engine.
         is_match, spans = wazuh_tool.os_match_execute(text)
         if is_match:
             highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m+OSMatch_Execute:\033[0m\n{highlighted_string}")
-
-        # 4. Test OS_Match2 (stateless wrapper)
-        is_match, spans = os_match2(pattern, text)
-        if is_match:
-            highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m+OS_Match2      :\033[0m\n{highlighted_string}")
+            print(
+                f"\n\033[1m✅ OSMatch (sregex) Match:\033[0m\n{highlighted_string}")
+        else:
+            print("\n\033[1m❌ OSMatch (sregex) No Match\033[0m")
 
 
 if __name__ == "__main__":

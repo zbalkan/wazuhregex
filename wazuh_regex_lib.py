@@ -1,60 +1,85 @@
 # wazuh_regex_lib.py
 
 import re
+from typing import Final, List, Optional, Pattern, Tuple
 
 
 class WazuhRegex:
     """
-    A Python class that emulates the logic of Wazuh's os_regex.h library.
-    This library is responsible for matching logic ONLY and contains no
-    display or coloring code.
+    A Python class that emulates the logic of Wazuh's os_regex.h and
+    os_match.h libraries.
+
+    This class is designed to be a high-fidelity testing tool for Wazuh
+    regex and sregex patterns. It replicates many of the specific behaviors
+    and limitations of the native Wazuh engine.
+
+    Usage:
+        try:
+            # 1. Instantiate the class with a Wazuh pattern.
+            # This will compile the pattern and validate its syntax.
+            regex_tool = WazuhRegex("your_wazuh_pattern")
+
+            # 2. Execute the match against your text.
+            is_match, spans = regex_tool.os_regex_execute("some log text")
+            if is_match:
+                print(f"Match found at spans: {spans}")
+                substrings = regex_tool.get_substrings()
+                print(f"Captured substrings: {substrings}")
+
+        except ValueError as e:
+            print(f"Pattern failed to compile: {e}")
+
+    Known Emulation Differences:
+        - The underlying Python `re` engine uses a backtracking algorithm, which
+          is more powerful than the non-backtracking C engine. This means some
+          complex patterns with multiple greedy quantifiers (e.g., `\\p*\\d*...`)
+          may succeed here when they would fail in Wazuh.
     """
 
+    _INVALID_GROUP_ALTERNATION: Final[Pattern[str]] = re.compile(
+        r'\([^)]*\|[^)]*\)')
+    _INVALID_MODIFIER_USE: Final[Pattern[str]
+                                 ] = re.compile(r'(?<!\\[wdspWDSP\.])[*+]')
+
+    # Centralized translation rules. The order is critical for correctness.
+    _TRANSLATION_RULES: Final[List[Tuple[str, str]]] = [
+        (r'\\', r'\\'),
+        (r'\D', r'[^0-9]'),
+        (r'\W', r'[^a-zA-Z0-9_@\-]'),
+        (r'\S', r'[^ ]'),
+        (r'\d', r'[0-9]'),
+        (r'\w', r'[a-zA-Z0-9_@\-]'),
+        (r'\s', r'[ ]'),
+        (r'\t', r'\t'),
+        (r'\p', r'[-\(\)\*\+,.\\:;<=>?\"\'#$%&\|{}]'),
+        (r'\.', r'.'),
+        (r'\*', r'\\*'),
+        (r'[(', r'\[('),
+        (r')]', r')\]'),
+    ]
+
     def __init__(self, pattern: str) -> None:
-
         self._raw_pattern: str = pattern
-        self._os_regex_compiled = None
-        self._os_match_compiled: list[tuple[str, str, bool]] = []
-        self._last_os_regex_substrings: list[str] = []
-
-        self._os_regex_compile(self._raw_pattern)
-        self._os_match_compile(self._raw_pattern)
+        self._os_regex_compiled: Pattern[str] | None = None
+        self._os_match_compiled: List[Tuple[str, str, bool]] = []
+        self._last_os_regex_substrings: List[str] = []
 
     def _os_regex_compile(self, pattern: str) -> None:
+        if self._INVALID_GROUP_ALTERNATION.search(pattern):
+            raise ValueError(
+                "Invalid pattern: Alternation '|' is not allowed inside groups '()'.")
+
+        if self._INVALID_MODIFIER_USE.search(pattern):
+            raise ValueError(
+                "Invalid pattern: Modifiers '*' or '+' can only be applied to backslash expressions (e.g., \\d+), not bare characters (e.g., a+).")
+
         translation = pattern
-        # Step 1: Handle the literal backslash escape `\\` first.
-        translation = translation.replace(r'\\', r'\\')
-
-        # Step 2: Translate the Wazuh-specific tokens into their Python `re` equivalents.
-        # We translate the negated classes first to avoid conflicts (e.g., \S before \s).
-        translation = translation.replace(r'\D', r'[^0-9]')
-        translation = translation.replace(r'\W', r'[^a-zA-Z0-9_@\-]')
-        translation = translation.replace(r'\S', r'[^ ]')  # Per docs, \s is only space
-
-        # Now translate the standard classes.
-        translation = translation.replace(r'\d', r'[0-9]')
-        translation = translation.replace(r'\w', r'[a-zA-Z0-9_@\-]')
-        translation = translation.replace(r'\s', r'[ ]')
-        translation = translation.replace(r'\t', r'\t')  # \t is the same in both
-        translation = translation.replace(r'\p', r'[-\(\)\*\+,.\\:;<=>?\"\'#$%&\|{}]')
-
-        # OSRegex \. means 'any character'
-        translation = translation.replace(r'\.', r'.')
-
-        # In Wazuh regex, `\*` must not be escaped. We must mark it invalid for Python's `re`.
-        translation = translation.replace(r'\*', r'\\*')
-
-        # The Wazuh C unit tests confirm that `[(...)]` is valid syntax
-        # meaning a capturing group `(...)` surrounded by literal brackets `[]`.
-        # We must translate this to `\[(...)\]` for Python's `re` engine.
-        translation = translation.replace(r'[(', r'\[(')
-        translation = translation.replace(r')]', r')\]')
+        for old, new in self._TRANSLATION_RULES:
+            translation = translation.replace(old, new)
 
         try:
-            # Compile with the IGNORECASE flag to match OSRegex's default behavior.
             self._os_regex_compiled = re.compile(translation, re.IGNORECASE)
         except re.error as e:
-            # Provide a more detailed error message for easier debugging.
             error_msg = (
                 f"Pattern '{pattern}' failed to compile.\n"
                 f"Translated Python pattern: '{translation}'\n"
@@ -69,26 +94,33 @@ class WazuhRegex:
         """
         self._last_os_regex_substrings = []
 
-        # The C engine expects anchor-only patterns to consume the whole string.
         if self._raw_pattern in ('$', '^$', '^'):
             return (True, [(0, 0)]) if text == "" else (False, [])
 
-        match: re.Match[str] | None = self._os_regex_compiled.search(
-            text)  # type: ignore
+        try:
+            self._os_regex_compile(self._raw_pattern)
+        except (ValueError, TypeError):
+            return False, []
+
+        if not self._os_regex_compiled:
+            return False, []
+
+        match: Optional[re.Match[str]] = self._os_regex_compiled.search(text)
+
         if not match:
             return False, []
 
         self._last_os_regex_substrings = list(match.groups())
-        return True, [match.span()]  # Return the span of the full match
+        return True, [match.span()]
 
     def get_substrings(self) -> list[str]:
+        """Returns the substrings captured by groups in the last os_regex_execute call."""
         return self._last_os_regex_substrings
 
-    def _os_match_compile(self, pattern: str):
+    def _os_match_compile(self, pattern: str) -> None:
         self._os_match_compiled = []
-        is_negated = False
-        if pattern.startswith('!'):
-            is_negated = True
+        is_negated = pattern.startswith('!')
+        if is_negated:
             pattern = pattern[1:]
         sub_patterns = pattern.split('|')
         for sub in sub_patterns:
@@ -114,14 +146,18 @@ class WazuhRegex:
 
     def os_match_execute(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """
-        Emulates OSMatch_Execute.
+        Emulates OSMatch_Execute (sregex).
         Returns a boolean and a list of (start, end) tuples for matches.
         """
         text_lower = text.lower()
         match_found = False
         match_spans: list[tuple[int, int]] = []
 
-        # Per C code, negation applies to the whole rule. Get it from the first sub-pattern.
+        try:
+            self._os_match_compile(self._raw_pattern)
+        except (ValueError, TypeError):
+            return False, []
+
         is_negated_rule = self._os_match_compiled[0][2] if self._os_match_compiled else False
 
         for strategy, pattern_arg, _ in self._os_match_compiled:
@@ -145,25 +181,7 @@ class WazuhRegex:
             if start != -1:
                 match_found = True
                 match_spans.append((start, end))
-                break  # OR logic: one match is enough
+                break
 
         final_match = not match_found if is_negated_rule else match_found
         return final_match, match_spans if final_match else []
-
-# --- One-Shot Wrapper Functions ---
-
-
-def os_regex(pattern: str, text: str) -> tuple[bool, list[tuple[int, int]]]:
-    try:
-        regex_tool = WazuhRegex(pattern)
-        return regex_tool.os_regex_execute(text)
-    except (ValueError, TypeError):
-        return False, []
-
-
-def os_match2(pattern: str, text: str) -> tuple[bool, list[tuple[int, int]]]:
-    try:
-        regex_tool = WazuhRegex(pattern)
-        return regex_tool.os_match_execute(text)
-    except (ValueError, TypeError):
-        return False, []
