@@ -10,19 +10,17 @@ class WazuhRegex:
     display or coloring code.
     """
 
-    def __init__(self, pattern: str):
-        if not isinstance(pattern, str):
-            raise TypeError("Pattern must be a string.")
+    def __init__(self, pattern: str) -> None:
 
-        self._raw_pattern = pattern
+        self._raw_pattern: str = pattern
         self._os_regex_compiled = None
-        self._os_match_compiled = []
-        self._last_os_regex_substrings = []
+        self._os_match_compiled: list[tuple[str, str, bool]] = []
+        self._last_os_regex_substrings: list[str] = []
 
         self._os_regex_compile(self._raw_pattern)
         self._os_match_compile(self._raw_pattern)
 
-    def _os_regex_compile(self, pattern: str):
+    def _os_regex_compile(self, pattern: str) -> None:
         translation = pattern
         translation = translation.replace(r'\d', r'[0-9]')
         translation = translation.replace(r'\w', r'[a-zA-Z0-9_@\-]')
@@ -49,7 +47,7 @@ class WazuhRegex:
         self._last_os_regex_substrings = list(match.groups())
         return True, [match.span()]  # Return the span of the full match
 
-    def get_substrings(self) -> list:
+    def get_substrings(self) -> list[str]:
         return self._last_os_regex_substrings
 
     def _os_match_compile(self, pattern: str):
@@ -87,7 +85,7 @@ class WazuhRegex:
         """
         text_lower = text.lower()
         match_found = False
-        match_spans = []
+        match_spans: list[tuple[int, int]] = []
 
         for strategy, pattern_arg, is_negated in self._os_match_compiled:
             pattern_lower = pattern_arg.lower()
@@ -112,7 +110,7 @@ class WazuhRegex:
                 match_spans.append((start, end))
                 break
 
-        final_match = match_found if not is_negated else not match_found
+        final_match: bool = match_found if not is_negated else not match_found  # type: ignore
         return final_match, match_spans if final_match else []
 
 # --- One-Shot Wrapper Functions ---

@@ -4,17 +4,17 @@ class Highlighter:
     """
     # Class-level constants for colors
     RED = '\033[91m'
-    YELLOW = '\033[93m'
     ENDC = '\033[0m'
 
-    def __init__(self, highlight_color=RED):
+    def __init__(self, highlight_color: str = RED, no_color: bool = False) -> None:
         """
         Initializes the highlighter with a specific color.
 
         Args:
             highlight_color (str): The ANSI escape code for highlighting.
         """
-        self.highlight_color = highlight_color
+        self.highlight_color: str = highlight_color
+        self.no_color: bool = no_color
 
     def apply(self, text: str, spans: list[tuple[int, int]]) -> str:
         """
@@ -28,6 +28,9 @@ class Highlighter:
             str: The formatted string with ANSI color codes.
         """
         if not spans:
+            return text
+
+        if self.no_color:
             return text
 
         # To handle multiple spans correctly without overlapping, we build the

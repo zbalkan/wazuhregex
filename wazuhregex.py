@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 
 from highlighter import Highlighter
@@ -14,8 +15,12 @@ def main() -> None:
     pattern = sys.argv[1]
 
     # --- Application Setup ---
+
+    # Check for NO_COLOR environment variable
+    no_color: bool = (os.getenv("NO_COLOR") is not None)
+
     # The application decides which color to use.
-    highlighter = Highlighter(highlight_color=Highlighter.RED)
+    highlighter = Highlighter(highlight_color=Highlighter.RED, no_color=no_color)
 
     try:
         wazuh_tool = WazuhRegex(pattern)
