@@ -22,17 +22,36 @@ class WazuhRegex:
 
     def _os_regex_compile(self, pattern: str) -> None:
         translation = pattern
+        # Step 1: Handle the literal backslash escape `\\` first.
+        translation = translation.replace(r'\\', r'\\')
+
+        # Step 2: Translate the Wazuh-specific tokens into their Python `re` equivalents.
+        # We translate the negated classes first to avoid conflicts (e.g., \S before \s).
+        translation = translation.replace(r'\D', r'[^0-9]')
+        translation = translation.replace(r'\W', r'[^a-zA-Z0-9_@\-]')
+        translation = translation.replace(r'\S', r'[^ ]')  # Per docs, \s is only space
+
+        # Now translate the standard classes.
         translation = translation.replace(r'\d', r'[0-9]')
         translation = translation.replace(r'\w', r'[a-zA-Z0-9_@\-]')
-        translation = translation.replace(r'\s', r' ')
-        translation = translation.replace(
-            r'\p', r'[-()*+,.\\:;<=>?\[\]!"\'#$%&|{}]')
+        translation = translation.replace(r'\s', r'[ ]')
+        translation = translation.replace(r'\t', r'\t')  # \t is the same in both
+        translation = translation.replace(r'\p', r'[-\(\)\*\+,.\\:;<=>?\"\'#$%&\|{}]')
+
+        # OSRegex \. means 'any character'
         translation = translation.replace(r'\.', r'.')
+
         try:
+            # Compile with the IGNORECASE flag to match OSRegex's default behavior.
             self._os_regex_compiled = re.compile(translation, re.IGNORECASE)
         except re.error as e:
-            raise ValueError(
-                f"Pattern '{pattern}' does not compile with OSRegex emulation: {e}")
+            # Provide a more detailed error message for easier debugging.
+            error_msg = (
+                f"Pattern '{pattern}' failed to compile.\n"
+                f"Translated Python pattern: '{translation}'\n"
+                f"Error: {e}"
+            )
+            raise ValueError(error_msg)
 
     def os_regex_execute(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """
@@ -40,7 +59,16 @@ class WazuhRegex:
         Returns a boolean and a list of (start, end) tuples for matches.
         """
         self._last_os_regex_substrings = []
-        match = self._os_regex_compiled.search(text)  # type: ignore
+
+        # The C engine expects anchor-only patterns to consume the whole string.
+        # If the pattern is just '$' or '^$' or '^', it can only match an empty string.
+        if self._raw_pattern in ('$', '^$', '^'):
+            if text == "":
+                return True, [(0, 0)]
+            else:
+                return False, []
+
+        match: re.Match[str] | None = self._os_regex_compiled.search(text)  # type: ignore
         if not match:
             return False, []
 
