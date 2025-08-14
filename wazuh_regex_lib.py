@@ -1,5 +1,4 @@
-from types import TracebackType
-from typing import Final, List, Optional, Tuple, Type
+from typing import Final, Optional
 
 import pcre2
 
@@ -40,7 +39,7 @@ class WazuhRegex:
     _INVALID_MODIFIER_USE = pcre2.compile(r'(?<!\\[wdspWDSP\.])[*+]')
 
     # Centralized translation rules. The order is critical for correctness.
-    _TRANSLATION_RULES: Final[List[Tuple[str, str]]] = [
+    _TRANSLATION_RULES: Final[list[tuple[str, str]]] = [
         (r'\\', r'\\'),
         (r'\D', r'[^0-9]'),
         (r'\W', r'[^a-zA-Z0-9_@\-]'),
@@ -59,26 +58,7 @@ class WazuhRegex:
     def __init__(self, pattern: str) -> None:
         self._raw_pattern: str = pattern
 
-    def __enter__(self) -> 'WazuhRegex':
-        """
-        Performs compilation and validation upon entering the 'with' block.
-        Returns the instance of itself.
-        """
-        self._os_regex_compiled = None
-        self._os_match_compiled = []
-        self._last_os_regex_substrings = []
-        return self
-
-    def __exit__(self, exc_type: Optional[Type[BaseException]],
-                 exc_value: Optional[BaseException],
-                 traceback: Optional[TracebackType]) -> None:
-        """
-        Handles cleanup upon exiting the 'with' block.
-        (No specific cleanup needed, but implemented for protocol correctness).
-        """
-        pass
-
-    def _os_regex_compile(self, pattern: str) -> None:
+    def _os_regex_compile(self, pattern: str) -> pcre2.Pattern:
         if self._INVALID_GROUP_ALTERNATION.search(pattern):
             raise ValueError(
                 "Invalid pattern: Alternation '|' is not allowed inside groups '()'.")
@@ -92,7 +72,7 @@ class WazuhRegex:
             translation = translation.replace(old, new)
 
         try:
-            self._os_regex_compiled = pcre2.compile(translation, pcre2.IGNORECASE)
+            return pcre2.compile(translation, pcre2.IGNORECASE)
         except Exception as e:
             error_msg = (
                 f"Pattern '{pattern}' failed to compile.\n"
@@ -111,15 +91,16 @@ class WazuhRegex:
         if self._raw_pattern in ('$', '^$', '^'):
             return (True, [(0, 0)]) if text == "" else (False, [])
 
+        compiled: pcre2.Pattern | None = None
         try:
-            self._os_regex_compile(self._raw_pattern)
+            compiled = self._os_regex_compile(self._raw_pattern)
         except (ValueError, TypeError):
             return False, []
 
-        if not self._os_regex_compiled:
+        if not compiled:
             return False, []
 
-        match: Optional[pcre2.Match] = self._os_regex_compiled.search(text)
+        match: Optional[pcre2.Match] = compiled.search(text)
 
         if not match:
             return False, []
@@ -131,8 +112,8 @@ class WazuhRegex:
         """Returns the substrings captured by groups in the last os_regex_execute call."""
         return self._last_os_regex_substrings
 
-    def _os_match_compile(self, pattern: str) -> None:
-        self._os_match_compiled = []
+    def _os_match_compile(self, pattern: str) -> list[tuple[str, str, bool]]:
+        os_match_compiled: list[tuple[str, str, bool]] = []
         is_negated = pattern.startswith('!')
         if is_negated:
             pattern = pattern[1:]
@@ -146,17 +127,18 @@ class WazuhRegex:
             if is_end_anchored:
                 clean_sub = clean_sub[:-1]
             if is_start_anchored and is_end_anchored:
-                self._os_match_compiled.append(
+                os_match_compiled.append(
                     ("_exact_match", clean_sub, is_negated))
             elif is_start_anchored:
-                self._os_match_compiled.append(
+                os_match_compiled.append(
                     ("_starts_with", clean_sub, is_negated))
             elif is_end_anchored:
-                self._os_match_compiled.append(
+                os_match_compiled.append(
                     ("_ends_with", clean_sub, is_negated))
             else:
-                self._os_match_compiled.append(
+                os_match_compiled.append(
                     ("_substring_search", clean_sub, is_negated))
+        return os_match_compiled
 
     def os_match(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """
@@ -167,14 +149,15 @@ class WazuhRegex:
         match_found = False
         match_spans: list[tuple[int, int]] = []
 
+        os_match_compiled: list[tuple[str, str, bool]] = list()
         try:
-            self._os_match_compile(self._raw_pattern)
+            os_match_compiled = self._os_match_compile(self._raw_pattern)
         except (ValueError, TypeError):
             return False, []
 
-        is_negated_rule = self._os_match_compiled[0][2] if self._os_match_compiled else False
+        is_negated_rule = os_match_compiled[0][2] if os_match_compiled else False
 
-        for strategy, pattern_arg, _ in self._os_match_compiled:
+        for strategy, pattern_arg, _ in os_match_compiled:
             pattern_lower = pattern_arg.lower()
             start, end = -1, -1
 

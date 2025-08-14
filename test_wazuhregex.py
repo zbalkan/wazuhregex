@@ -173,39 +173,35 @@ EXTRACTION_DATA: list[tuple[str, str, list[str]]] = [
 @pytest.mark.parametrize("pattern, text", SUCCESS_MATCH_DATA)
 def test_osmatch_success(pattern: str, text: str) -> None:
     """Replicates test_success_match from the C tests."""
-    with WazuhRegex(pattern) as tool:
-        is_match, _ = tool.os_match(text)
+    is_match, _ = WazuhRegex(pattern).os_match(text)
     assert is_match is True
 
 
 @pytest.mark.parametrize("pattern, text", FAIL_MATCH_DATA)
 def test_osmatch_fail(pattern: str, text: str) -> None:
     """Replicates test_fail_match from the C tests."""
-    with WazuhRegex(pattern) as tool:
-        is_match, _ = tool.os_match(text)
-        assert is_match is False
+    is_match, _ = WazuhRegex(pattern).os_match(text)
+    assert is_match is False
 
 
 @pytest.mark.parametrize("pattern, text", SUCCESS_REGEX_DATA)
 def test_osregex_success(pattern: str, text: str) -> None:
     """Replicates test_success_regex from the C tests."""
-    with WazuhRegex(pattern) as tool:
-        is_match, _ = tool.os_regex(text)
-        assert is_match is True
+    is_match, _ = WazuhRegex(pattern).os_regex(text)
+    assert is_match is True
 
 
 @pytest.mark.parametrize("pattern, text", FAIL_REGEX_DATA)
 def test_osregex_fail(pattern: str, text: str) -> None:
     """Replicates test_fail_regex from the C tests."""
-    with WazuhRegex(pattern) as tool:
-        is_match, _ = tool.os_regex(text)
-        assert is_match is False
+    is_match, _ = WazuhRegex(pattern).os_regex(text)
+    assert is_match is False
 
 
 @pytest.mark.parametrize("pattern, text, expected_substrings", EXTRACTION_DATA)
 def test_osregex_extraction(pattern: str, text: str, expected_substrings: list[str]) -> None:
     """Replicates test_regex_extraction from the C tests."""
-    with WazuhRegex(pattern) as tool:
-        is_match, _ = tool.os_regex(text)
-        assert is_match is True
-        assert tool.get_substrings() == expected_substrings
+    tool = WazuhRegex(pattern)
+    is_match, _ = tool.os_regex(text)
+    assert is_match is True
+    assert tool.get_substrings() == expected_substrings
