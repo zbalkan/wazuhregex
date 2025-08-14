@@ -41,6 +41,9 @@ class WazuhRegex:
         # OSRegex \. means 'any character'
         translation = translation.replace(r'\.', r'.')
 
+        # In Wazuh regex, `\*` must not be escaped. We must mark it invalid for Python's `re`.
+        translation = translation.replace(r'\*', r'\\*')
+
         try:
             # Compile with the IGNORECASE flag to match OSRegex's default behavior.
             self._os_regex_compiled = re.compile(translation, re.IGNORECASE)
@@ -61,14 +64,11 @@ class WazuhRegex:
         self._last_os_regex_substrings = []
 
         # The C engine expects anchor-only patterns to consume the whole string.
-        # If the pattern is just '$' or '^$' or '^', it can only match an empty string.
         if self._raw_pattern in ('$', '^$', '^'):
-            if text == "":
-                return True, [(0, 0)]
-            else:
-                return False, []
+            return (True, [(0, 0)]) if text == "" else (False, [])
 
-        match: re.Match[str] | None = self._os_regex_compiled.search(text)  # type: ignore
+        match: re.Match[str] | None = self._os_regex_compiled.search(
+            text)  # type: ignore
         if not match:
             return False, []
 
@@ -115,7 +115,10 @@ class WazuhRegex:
         match_found = False
         match_spans: list[tuple[int, int]] = []
 
-        for strategy, pattern_arg, is_negated in self._os_match_compiled:
+        # Per C code, negation applies to the whole rule. Get it from the first sub-pattern.
+        is_negated_rule = self._os_match_compiled[0][2] if self._os_match_compiled else False
+
+        for strategy, pattern_arg, _ in self._os_match_compiled:
             pattern_lower = pattern_arg.lower()
             start, end = -1, -1
 
@@ -136,9 +139,9 @@ class WazuhRegex:
             if start != -1:
                 match_found = True
                 match_spans.append((start, end))
-                break
+                break  # OR logic: one match is enough
 
-        final_match: bool = match_found if not is_negated else not match_found  # type: ignore
+        final_match = not match_found if is_negated_rule else match_found
         return final_match, match_spans if final_match else []
 
 # --- One-Shot Wrapper Functions ---
