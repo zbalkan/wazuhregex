@@ -149,3 +149,5 @@ mypy.ini
 # Graphs
 *.svg
 *.dot
+
+.venvl
