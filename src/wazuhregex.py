@@ -1,66 +1,76 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 
-from highlighter import Highlighter
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from wazuh_regex_lib import WazuhRegex
 
 
 def main() -> None:
+    console = Console()
+
     if len(sys.argv) != 2 or sys.argv[1] in ('-h', '--help'):
-        print(f"\nUsage: {sys.argv[0]} '<PATTERN>'")
+        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
         sys.exit(1)
 
     pattern = sys.argv[1]
-    no_color: bool = (os.getenv("NO_COLOR") is not None)
-    highlighter = Highlighter(
-        highlight_color=Highlighter.RED, no_color=no_color)
 
-    # The wazuh_tool object holds the compiled state for both engines.
+    # Show pattern info
+    console.print(Panel(f"[bold cyan]Pattern:[/bold cyan] {pattern}",
+                        title="Wazuh Regex Tester"))
+
     wazuh_tool = WazuhRegex(pattern)
-    print("Pattern compiled successfully. Ready for input.", file=sys.stderr)
+    console.print(
+        "[green]✓[/green] Pattern compiled successfully\n", style="dim")
 
     for line in sys.stdin:
         text = line.strip().strip('\n')
         if not text:
             continue
 
-        print("-" * 40)  # Add a separator for clarity between inputs
+        # Create results table
+        table = Table(title=f"Testing: {text}",
+                      show_header=True, header_style="bold")
+        table.add_column("Engine", style="cyan", width=15)
+        table.add_column("Result", justify="center", width=10)
+        table.add_column("Match Span", style="yellow")
+        table.add_column("Captured Groups", style="green")
 
-        # --- Test 1: The OS_Regex Engine ---
-        # This is the main, powerful regex engine that captures substrings.
+        # Test OS_Regex
         is_match, spans = wazuh_tool.os_regex(text)
         if is_match:
-            highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m✅ OSRegex Match:\033[0m\n{highlighted_string}")
             substrings = wazuh_tool.get_substrings()
-            if substrings:
-                for sub in substrings:
-                    print(f"  - Substring: {sub}")
+            span_str = str(spans[0]) if spans else "—"
+            groups_str = ", ".join(
+                f'"{s}"' for s in substrings) if substrings else "—"
+            table.add_row("OS_Regex", "✅ Match", span_str, groups_str)
         else:
-            print("\n\033[1m❌ OSRegex No Match\033[0m")
+            table.add_row("OS_Regex", "❌ No Match", "—", "—")
 
-        # --- Test 2: The OS_Match (sregex) Engine ---
-        # This is the fast, simple string matching engine.
+        # Test OS_Match
         is_match, spans = wazuh_tool.os_match(text)
+        span_str = str(spans[0]) if spans else "—"
         if is_match:
-            highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m✅ OSMatch (sregex) Match:\033[0m\n{highlighted_string}")
+            table.add_row("OS_Match", "✅ Match", span_str, "N/A")
         else:
-            print("\n\033[1m❌ OSMatch (sregex) No Match\033[0m")
+            table.add_row("OS_Match", "❌ No Match", "—", "N/A")
 
-        # --- Test 3: The PCRE2 Regex Engine ---
+        # Test PCRE2
         is_match, spans = wazuh_tool.pcre2_regex(text)
         if is_match:
-            highlighted_string = highlighter.apply(text, spans)
-            print(f"\n\033[1m✅ PCRE2 Match:\033[0m\n{highlighted_string}")
             substrings = wazuh_tool.get_substrings()
-            if substrings:
-                for sub in substrings:
-                    print(f"  - Substring: {sub}")
+            span_str = str(spans[0]) if spans else "—"
+            groups_str = ", ".join(
+                f'"{s}"' for s in substrings) if substrings else "—"
+            table.add_row("PCRE2", "✅ Match", span_str, groups_str)
         else:
-            print("\n\033[1m❌ PCRE2 No Match\033[0m")
+            table.add_row("PCRE2", "❌ No Match", "—", "—")
+
+        console.print(table)
+        console.print()  # Blank line between tests
 
 
 if __name__ == "__main__":
