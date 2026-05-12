@@ -205,3 +205,45 @@ def test_osregex_extraction(pattern: str, text: str, expected_substrings: list[s
     is_match, _ = tool.os_regex(text)
     assert is_match is True
     assert tool.get_substrings() == expected_substrings
+
+
+def test_osregex_multiple_group_matches() -> None:
+    tool = WazuhRegex(r"(\d+)")
+    is_match, spans = tool.os_regex("30 Agustos 2020")
+
+    assert is_match is True
+    assert spans == [(0, 2), (11, 15)]
+    assert tool.get_substrings() == ["30", "2020"]
+
+
+def test_pcre2_multiple_group_matches() -> None:
+    tool = WazuhRegex(r"(\d+)")
+    is_match, spans = tool.pcre2_regex("30 Agustos 2020")
+
+    assert is_match is True
+    assert spans == [(0, 2), (11, 15)]
+    assert tool.get_substrings() == ["30", "2020"]
+
+
+def test_pattern_accepts_single_quoted_input() -> None:
+    tool = WazuhRegex(r"'(\d+)'")
+    is_match, spans = tool.os_regex("30 Agustos 2020")
+
+    assert is_match is True
+    assert spans == [(0, 2), (11, 15)]
+    assert tool.get_substrings() == ["30", "2020"]
+
+
+def test_pattern_accepts_double_quoted_input() -> None:
+    tool = WazuhRegex(r'"(\d+)"')
+    is_match, spans = tool.pcre2_regex("30 Agustos 2020")
+
+    assert is_match is True
+    assert spans == [(0, 2), (11, 15)]
+    assert tool.get_substrings() == ["30", "2020"]
+
+
+@pytest.mark.parametrize("pattern", ["'(\\d+)", '"(\\d+)', "(\\d+)\""])
+def test_pattern_rejects_unbalanced_quotes(pattern: str) -> None:
+    with pytest.raises(ValueError, match="Pattern quotes must start and end"):
+        WazuhRegex(pattern)

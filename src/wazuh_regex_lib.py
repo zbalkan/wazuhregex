@@ -32,9 +32,24 @@ class WazuhRegex:
     ]
 
     def __init__(self, pattern: str) -> None:
-        self._raw_pattern: str = pattern
+        self._raw_pattern: str = self._normalize_pattern(pattern)
         # This list is shared, so it must be cleared by each method.
         self._last_substrings: list[str] = []
+
+    @staticmethod
+    def _normalize_pattern(pattern: str) -> str:
+        if not pattern:
+            return pattern
+
+        if pattern[0] in ("'", '"'):
+            if len(pattern) < 2 or pattern[-1] != pattern[0]:
+                raise ValueError("Pattern quotes must start and end with the same quote character.")
+            return pattern[1:-1]
+
+        if pattern[-1] in ("'", '"'):
+            raise ValueError("Pattern quotes must start and end with the same quote character.")
+
+        return pattern
 
     def _os_regex_compile(self) -> pcre2.Pattern:
         if self._INVALID_GROUP_ALTERNATION.search(self._raw_pattern):
@@ -59,13 +74,22 @@ class WazuhRegex:
 
         try:
             compiled = self._os_regex_compile()
-            match = compiled.search(text)
-            if not match:
+            matches = list(compiled.finditer(text))
+            if not matches:
                 return False, []
 
-            self._last_substrings = [
-                group for group in match.groups() if group is not None]
-            return True, [match.span()]
+            spans: list[tuple[int, int]] = []
+            substrings: list[str] = []
+            for match in matches:
+                spans.append(match.span())
+                groups = [group for group in match.groups() if group is not None]
+                if groups:
+                    substrings.extend(groups)
+                else:
+                    substrings.append(match.group(0))
+
+            self._last_substrings = substrings
+            return True, spans
         except ValueError:
             return False, []
 
@@ -137,12 +161,21 @@ class WazuhRegex:
         self._last_substrings = []
         try:
             pcre2_pattern = pcre2.compile(self._raw_pattern, jit=True)
-            match = pcre2_pattern.search(text)
-            if not match:
+            matches = list(pcre2_pattern.finditer(text))
+            if not matches:
                 return False, []
 
-            self._last_substrings = [
-                group for group in match.groups() if group is not None]
-            return True, [match.span()]
+            spans: list[tuple[int, int]] = []
+            substrings: list[str] = []
+            for match in matches:
+                spans.append(match.span())
+                groups = [group for group in match.groups() if group is not None]
+                if groups:
+                    substrings.extend(groups)
+                else:
+                    substrings.append(match.group(0))
+
+            self._last_substrings = substrings
+            return True, spans
         except Exception:
             return False, []
