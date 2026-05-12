@@ -5,3 +5,4 @@ pcre2==0.6.0
 pluggy==1.6.0
 Pygments==2.20.0
 pytest==9.0.3
+rich==15.0.0
