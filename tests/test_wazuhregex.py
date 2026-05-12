@@ -1,6 +1,6 @@
 import pytest
 
-from wazuh_regex_lib import WazuhRegex
+from src.wazuh_regex_lib import WazuhRegex
 
 # --- Data from C unit tests ---
 
