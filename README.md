@@ -1,166 +1,139 @@
 # wazuhregex
 
-This project provides a high-fidelity Python emulation of Wazuh's `wazuh-regex` tool written in C, that allows checking against three distinct regular expression engines: `OS_Regex`, `sregex` (`OS_Match`), and `PCRE2`. It is designed for developers and security engineers who need to write, test, and validate Wazuh rules with confidence before deploying them.
+`wazuhregex` is a Python implementation of Wazuh regex behavior for local testing and development.
+It lets you validate one pattern against all three Wazuh-relevant engines in one run:
 
-The project consists of three main components:
+- `OS_Regex`
+- `OS_Match` (sregex)
+- `PCRE2`
 
-1. **`wazuh_regex_lib.py`**: A powerful Python library providing access to emulators for each of Wazuh's regex engines.
-2. **`wazuhregex.py` (Wazuh Regex Tester)**: A command-line tool that precisely mimics the output of the original `wazuh-regex` C program, testing a single pattern against all three engines simultaneously.
-3. **`test_wazuhregex.py`**: A comprehensive unit test suite, derived from the original Wazuh C tests, to ensure the emulation is accurate and reliable.
+The project includes:
 
-## The Problem
+- `src/wazuh_regex_lib.py`: reusable `WazuhRegex` library class.
+- `src/wazuhregex.py`: CLI tester with side-by-side engine results.
+- `tests/test_wazuhregex.py`: pytest suite that mirrors Wazuh C test coverage.
 
-Wazuh uses three different regex flavors, two of which (`OS_Regex` and `sregex`) have unique, non-standard syntax and a specific set of limitations. Standard online regex testers (like Regex101) use common engines like PCRE or JavaScript, which do not accurately reflect how a pattern will behave inside a Wazuh ruleset.
+## Why this exists
 
-A pattern that seems correct in a standard tester might fail silently or behave unexpectedly in Wazuh. This tool suite bridges that gap by providing an environment that faithfully replicates the behavior of all three Wazuh engines.
+Wazuh rules can use regex dialects that differ from common online testers. A pattern that works in PCRE-focused tools may fail in `OS_Regex` or `OS_Match`.
+
+This project gives you a local, repeatable way to check behavior before shipping rules.
 
 ## Features
 
-* **Three Engines, One Tool**: Test patterns against `OS_Regex`, `sregex`, and `PCRE2` to cover all Wazuh rule types from legacy to modern.
-* **High-Fidelity Emulation**: Accurately implements the behavior of the legacy `OS_Regex` and `sregex` engines, including their specific quirks and limitations.
-* **Native PCRE2 Power**: Uses the `pcre2` library, the same engine used by Wazuh, for 100% accurate PCRE2 testing.
-* **C-Tool Replica (`wazuhregex.py`)**: The command-line tool is designed to behave exactly like the internal `wazuh-regex` C tool, showing which of the three engines successfully match a given pattern.
-* **Interactive CLI**: Pipe log files or type log lines directly into the tool for instant feedback.
-* **Match Highlighting**: Visually highlights the exact part of the string that matched the pattern.
-* **Substring Capture Display**: Clearly lists all substrings captured by `()` groups.
+- Test all 3 engines from one command.
+- Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
+- Match spans for each engine.
+- Captured groups/substring extraction for `OS_Regex` and `PCRE2`.
+- Pattern normalization that accepts fully quoted patterns and rejects unbalanced quotes.
 
-## Installation
+## Requirements
 
-1. **Prerequisites**:
+- Python 3.10+
+- Dependencies in `requirements.txt` (notably `pcre2` and `rich`)
 
-  - Python 3.7+
-  - PCRE2 library
-
-2. **Clone the repository**:
-
-```bash
-git clone <your-repo-url>
-cd wazuhregex
-```
-
-3. **Dependencies**:
-
-The project requires the `pcre2` C and Python library, as mentioned above. Install it and other development dependencies (like `pytest` for testing) using:
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage: The `wazuhregex` Tool
+## CLI usage
 
-The primary way to use this project is through the `wazuhregex.py` command-line tool. It takes a single pattern as an argument and tests it against all three engines for every line of input it receives.
-
-### Basic Syntax
+Run either from repository root or from `src/`:
 
 ```bash
-./wazuhregex.py '<WAZUH_PATTERN>'
+# from repository root
+python src/wazuhregex.py '<PATTERN>'
+
+# or from src/
+./wazuhregex.py '<PATTERN>'
 ```
 
-**Note**: It is highly recommended to wrap your pattern in single quotes (`'`) to prevent your shell from interpreting special characters like `*`, `|`, or `$`.
+Then provide input lines via stdin (interactive typing or piping).
 
-### Examples
+### Help/usage output
 
-#### 1. Interactive Testing
+```bash
+python src/wazuhregex.py --help
+```
 
-Run the tool with a pattern and type or paste log lines directly into the terminal. Press `Ctrl+D` to exit.
+### Example: interactive input
 
-**Command:**
+Command:
 
 ```bash
 ./wazuhregex.py '^(\S+): error'
 ```
 
-Now, paste this line and press Enter:
-`sshd: error found in log`
+Input line:
 
-**Output:**
-
-```plaintext
-Pattern compiled successfully. Ready for input.
-----------------------------------------
-
-✅ OSRegex Match:
+```text
 sshd: error found in log
-  - Substring: sshd
-
-❌ OSMatch (sregex) No Match
-
-✅ PCRE2 Match:
-sshd: error found in log
-  - Substring: sshd
 ```
 
-This output clearly shows that the pattern is valid for the `OS_Regex` and `PCRE2` engines but not for `sregex` (which doesn't understand the `\S` token).
+Example output (captured from the current CLI):
 
-#### 2. Testing a Log File
+```text
+╭─────────────────────────────────────────────────────── Wazuh Regex Tester ────────────────────────────────────────────────────────╮
+│ Pattern: ^(\S+): error                                                                                                            │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+✓ Pattern compiled successfully
 
-Pipe a log file into the tool to test the pattern against every line.
+sshd: error found in log
+               Testing: sshd: error found in log
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Engine          ┃   Result   ┃ Match Span ┃ Captured Groups ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ OS_Regex        │  ✅ Match  │ (0, 11)    │ "sshd"          │
+│ OS_Match        │   ❌ No    │ —          │ N/A             │
+│                 │   Match    │            │                 │
+│ PCRE2           │  ✅ Match  │ (0, 11)    │ "sshd"          │
+└─────────────────┴────────────┴────────────┴─────────────────┘
+```
+
+### Example: piped input
 
 ```bash
-cat /var/log/auth.log | ./wazuhregex.py 'Failed password for (\S+)'
+printf '%s\n' 'sshd: error found in log' 'info: all good' | python src/wazuhregex.py 'error'
 ```
 
-#### 3. Testing an Invalid `OS_Regex` Pattern
-
-If you provide a pattern that is invalid for `OS_Regex` (like using alternation in a group), it will correctly show "No Match" for that engine while still succeeding for PCRE2.
-
-**Command:**
-
-```bash
-./wazuhregex.py 'invalid(a|b)pattern'
-```
-
-**Input:**
-
-`this is an invalid(a|b)pattern`
-
-**Output:**
-
-```plantext
-----------------------------------------
-
-❌ OSRegex No Match
-
-❌ OSMatch (sregex) No Match
-
-✅ PCRE2 Match:
-this is an invalid(a|b)pattern
-  - Substring: a
-```
-
-## Library Usage (`wazuh_regex_lib.py`)
-
-For more advanced use cases, you can import the `WazuhRegex` class directly into your own Python projects. It provides a stateless "toolbox" of methods to test patterns against specific engines.
+## Library usage
 
 ```python
-from wazuh_regex_lib import WazuhRegex
+from src.wazuh_regex_lib import WazuhRegex
 
-pattern = "^(\\d+)"
-text = "123-abc"
+tool = WazuhRegex(r"(\d+)")
 
-tester = WazuhRegex(pattern)
-
-# Test against the OS_Regex engine
-is_match, spans = tester.os_regex(text)
+# OS_Regex emulation
+is_match, spans = tool.os_regex("30 Agustos 2020")
 if is_match:
-    print(f"OS_Regex matched! Substrings: {tester.get_substrings()}")
+    print(spans)                 # [(0, 2), (11, 15)]
+    print(tool.get_substrings()) # ['30', '2020']
 
-# Test against the PCRE2 engine
-is_pcre2_match, _ = tester.pcre2_regex(text)
-if is_pcre2_match:
-    print("PCRE2 matched!")
+# OS_Match emulation
+is_match, spans = tool.os_match("Error: disk full")
+
+# Native PCRE2
+is_match, spans = tool.pcre2_regex("30 Agustos 2020")
 ```
 
-## Development and Testing
+## Running tests
 
-The unit test file `test_wazuhregex.py` contains a comprehensive suite of tests derived directly from the original Wazuh C source code. This ensures that the emulation logic remains accurate.
-
-To run the tests, use `pytest`:
+Run all tests:
 
 ```bash
 pytest
 ```
 
-## Known Emulation Differences
+Run only this package tests:
 
-**Backtracking**: The underlying `pcre2` engine used for the `OS_Regex` emulation has a powerful backtracking mechanism. The native Wazuh C engine is a simpler, non-backtracking engine. This means some complex patterns with multiple consecutive greedy quantifiers (e.g., `\p*\d*...`) may succeed in this tool when they would fail in Wazuh. This is a fundamental difference in execution strategy.
+```bash
+pytest tests/test_wazuhregex.py
+```
+
+## Notes on behavior differences
+
+- `OS_Regex` emulation translates Wazuh-style tokens before compiling with `pcre2`.
+- Because the backend engine supports richer backtracking, edge cases may differ from the original C runtime in some complex patterns.
+- `OS_Match` is substring/anchor strategy based and does not return capture groups.
