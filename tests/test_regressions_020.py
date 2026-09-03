@@ -1,7 +1,7 @@
 """Additional regression and edge-case coverage for the 0.2.x alpha series.
 
 These tests intentionally separate documented Wazuh behaviour from known emulator
-approximations.  Known divergences are marked xfail so they stay visible without
+approximations. Known divergences are marked xfail so they stay visible without
 pretending that the alpha emulator is already bit-for-bit compatible with Wazuh.
 """
 
@@ -168,7 +168,14 @@ def test_pcre2_is_case_sensitive_unless_inline_modifier_is_used() -> None:
     "pattern,text",
     [
         (r"^\x41$", "A"),
-        (r"^\x{41}$", "A"),
+        pytest.param(
+            r"^\x{41}$",
+            "A",
+            marks=pytest.mark.xfail(
+                reason="Known alpha divergence: pcre2 0.6.0 does not accept Wazuh's documented braced hex form through this binding",
+                strict=False,
+            ),
+        ),
         (r"^\t$", "\t"),
         (r"^\r$", "\r"),
         (r"^\n$", "\n"),
