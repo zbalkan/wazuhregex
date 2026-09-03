@@ -2,10 +2,12 @@ import subprocess
 import sys
 
 import pytest
+from rich.console import Console
 
+from src.compare import Engine, RegexComparer
 from src.highlighter import Highlighter
-from src.wazuhregex import _remove_line_delimiter
 from src.wazuh_regex_lib import WazuhRegex
+from src.wazuhregex import _pattern_header, _remove_line_delimiter
 
 # --- Data from C unit tests ---
 
@@ -484,6 +486,29 @@ def test_cli_module_preserves_empty_input() -> None:
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Match" in result.stdout
+
+
+def test_regex_comparer_converts_literal_to_all_engines() -> None:
+    comparer = RegexComparer()
+    source = comparer.parse("^event$", Engine.PCRE2)
+
+    assert {
+        alternative.engine: alternative.pattern
+        for alternative in comparer.alternatives(source)
+    } == {
+        Engine.OSREGEX: "^event$",
+        Engine.SREGEX: "^event$",
+    }
+
+
+def test_pattern_header_shows_all_safe_alternatives() -> None:
+    console = Console(record=True)
+    console.print(_pattern_header("^event$"))
+    rendered = console.export_text()
+
+    assert "OS_Regex" in rendered
+    assert "OS_Match" in rendered
+    assert "PCRE2" in rendered
 
 
 def test_cli_preserves_input_whitespace() -> None:

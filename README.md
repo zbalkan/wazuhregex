@@ -15,13 +15,15 @@ The project includes:
 
 ## Why this exists
 
-Wazuh rules can use regex dialects that differ from common online testers. A pattern that works in PCRE-focused tools may fail in `OS_Regex` or `OS_Match`.
+Wazuh rules can use regex engines that differ from common online testers. A pattern that works in PCRE-focused tools may fail in `OS_Regex` or `OS_Match`.
 
 This project gives you a local, repeatable way to check behavior before shipping rules.
 
 ## Features
 
 - Test all 3 engines from one command.
+- Show round-trip-validated OS_Regex, OS_Match, and PCRE2 alternatives in the
+  command header whenever the input can be represented safely.
 - Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
 - Match spans for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.

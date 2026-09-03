@@ -8,8 +8,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 if __package__:
+    from .compare import Engine, RegexComparer
     from .wazuh_regex_lib import WazuhRegex
 else:
+    from compare import Engine, RegexComparer
     from wazuh_regex_lib import WazuhRegex
 
 
@@ -27,6 +29,37 @@ def _format_substrings(substrings: list[str]) -> str:
     return ", ".join(f'"{escape(value)}"' for value in substrings)
 
 
+def _pattern_header(pattern: str) -> Table:
+    """Build a header containing safe equivalents of the PCRE2 input."""
+    comparer = RegexComparer()
+    patterns = {Engine.PCRE2: pattern}
+    try:
+        source = comparer.parse(pattern, Engine.PCRE2)
+        patterns.update(
+            {alternative.engine: alternative.pattern
+             for alternative in comparer.alternatives(source)}
+        )
+    except ValueError:
+        # Compilation diagnostics below remain the authority for invalid input.
+        pass
+
+    table = Table(title="Wazuh Regex Tester", show_header=True,
+                  header_style="bold")
+    table.add_column("engine", style="cyan", width=15)
+    table.add_column("Equivalent pattern")
+    for engine, label in (
+        (Engine.OSREGEX, "OS_Regex"),
+        (Engine.SREGEX, "OS_Match"),
+        (Engine.PCRE2, "PCRE2"),
+    ):
+        alternative = patterns.get(engine)
+        table.add_row(
+            label,
+            escape(alternative) if alternative is not None else "[dim]Not safely convertible[/dim]",
+        )
+    return table
+
+
 def main() -> None:
     console = Console()
 
@@ -42,9 +75,10 @@ def main() -> None:
 
     pattern = sys.argv[1]
 
-    # Show pattern info
-    console.print(Panel(f"[bold cyan]Pattern:[/bold cyan] {escape(pattern)}",
-                        title="Wazuh Regex Tester"))
+    # Treat the command-line expression as PCRE2 when deriving equivalent
+    # spellings. Every conversion is round-trip checked by RegexComparer.
+    console.print(Panel(f"[bold cyan]Input pattern:[/bold cyan] {escape(pattern)}"))
+    console.print(_pattern_header(pattern))
 
     try:
         wazuh_tool = WazuhRegex(pattern)
