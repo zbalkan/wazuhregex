@@ -96,11 +96,12 @@ class WazuhRegex:
             substrings: list[str] = []
             for match in matches:
                 spans.append(match.span())
-                groups = [group for group in match.groups() if group is not None]
+                groups: list[str] = [group for group in match.groups() if group is not None]
                 if groups:
                     substrings.extend(groups)
                 else:
-                    substrings.append(match.group(0))
+                    if match.group(0):
+                        substrings.append(str(match.group(0)))
 
             self._last_substrings = substrings
             return True, spans
@@ -183,11 +184,12 @@ class WazuhRegex:
             substrings: list[str] = []
             for match in matches:
                 spans.append(match.span())
-                groups = [group for group in match.groups() if group is not None]
+                groups: list[str] = [group for group in match.groups() if group is not None]
                 if groups:
                     substrings.extend(groups)
                 else:
-                    substrings.append(match.group(0))
+                    if match.group(0):
+                        substrings.append(str(match.group(0)))
 
             self._last_substrings = substrings
             return True, spans
