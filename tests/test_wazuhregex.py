@@ -220,6 +220,69 @@ def test_osregex_multiple_group_matches() -> None:
     assert tool.get_substrings() == ["30", "2020"]
 
 
+@pytest.mark.parametrize(
+    "token, matching_text, non_matching_text",
+    [
+        (r"\d", "7", "a"),
+        (r"\D", "a", "7"),
+        (r"\w", "@", "."),
+        (r"\w", "-", "+"),
+        (r"\W", "+", "_"),
+        (r"\s", " ", "\t"),
+        (r"\S", "\t", " "),
+        (r"\t", "\t", " "),
+        (r"\p", "#", "a"),
+    ],
+)
+def test_osregex_documented_character_classes(
+    token: str, matching_text: str, non_matching_text: str
+) -> None:
+    """Exercise the character classes supported by Wazuh OS_Regex."""
+    assert WazuhRegex(f"^{token}$").os_regex(matching_text)[0] is True
+    assert WazuhRegex(f"^{token}$").os_regex(non_matching_text)[0] is False
+
+
+@pytest.mark.parametrize(
+    "pattern, matching_text, non_matching_text",
+    [
+        (r"^\d+$", "012345", "012a45"),
+        (r"^\w*$", "user-name_1@example", "user.name"),
+        (r"^\s+$", "   ", " \t "),
+        (r"^\S+$", "host\tname", "host name"),
+        (r"^file\.log$", "fileXlog", "filelog"),
+        (r"^file.log$", "file.log", "fileXlog"),
+    ],
+)
+def test_osregex_documented_operators(
+    pattern: str, matching_text: str, non_matching_text: str
+) -> None:
+    """Cover Wazuh repetition and its unusual escaped-dot wildcard."""
+    assert WazuhRegex(pattern).os_regex(matching_text)[0] is True
+    assert WazuhRegex(pattern).os_regex(non_matching_text)[0] is False
+
+
+@pytest.mark.parametrize("pattern", [r"a+", r"a*", r"(foo|bar)"])
+def test_osregex_rejects_unsupported_operator_placement(pattern: str) -> None:
+    tool = WazuhRegex(pattern)
+
+    assert tool.os_regex(pattern)[0] is False
+    assert "OS_Regex" in tool.validation_errors()
+
+
+def test_osregex_is_case_insensitive_but_pcre2_is_case_sensitive() -> None:
+    tool = WazuhRegex("^error$")
+
+    assert tool.os_regex("ERROR")[0] is True
+    assert tool.pcre2_regex("ERROR")[0] is False
+
+
+def test_osregex_captures_empty_and_unmatched_groups_distinctly() -> None:
+    tool = WazuhRegex(r"^(\d*)(\s)(\w+)$")
+
+    assert tool.os_regex(" user")[0] is True
+    assert tool.get_substrings() == ["", " ", "user"]
+
+
 def test_pcre2_multiple_group_matches() -> None:
     tool = WazuhRegex(r"(\d+)")
     is_match, spans = tool.pcre2_regex("30 Agustos 2020")
@@ -227,6 +290,38 @@ def test_pcre2_multiple_group_matches() -> None:
     assert is_match is True
     assert spans == [(0, 2), (11, 15)]
     assert tool.get_substrings() == ["30", "2020"]
+
+
+@pytest.mark.parametrize(
+    "pattern, text, expected_spans",
+    [
+        (r"(?<=user=)\w+", "user=alice", [(5, 10)]),
+        (r"\b(?:cat|dog)s?\b", "cats and dog", [(0, 4), (9, 12)]),
+        (r"^line\Rnext$", "line\r\nnext", [(0, 10)]),
+        (r"\p{L}+", "123 café 456", [(4, 8)]),
+    ],
+)
+def test_pcre2_extended_syntax(
+    pattern: str, text: str, expected_spans: list[tuple[int, int]]
+) -> None:
+    """Cover PCRE2 constructs that are intentionally not OS_Regex syntax."""
+    assert WazuhRegex(pattern).pcre2_regex(text) == (True, expected_spans)
+
+
+def test_pcre2_preserves_named_and_optional_capture_values() -> None:
+    tool = WazuhRegex(r"(?<scheme>https?)(://)(www\.)?")
+
+    assert tool.pcre2_regex("http://example.com")[0] is True
+    assert tool.get_substrings() == ["http", "://"]
+
+
+def test_failed_match_clears_captures_from_previous_match() -> None:
+    tool = WazuhRegex(r"(\d+)")
+    assert tool.pcre2_regex("id=42")[0] is True
+    assert tool.get_substrings() == ["42"]
+
+    assert tool.pcre2_regex("no digits")[0] is False
+    assert tool.get_substrings() == []
 
 
 def test_pattern_preserves_single_quotes_as_literals() -> None:
@@ -255,6 +350,49 @@ def test_osregex_treats_pcre_only_metacharacters_as_literals(metacharacter: str)
 
 def test_osmatch_removes_only_one_anchor_at_each_end() -> None:
     assert WazuhRegex("^^event").os_match("^event log")[1] == [(0, 6)]
+
+
+@pytest.mark.parametrize(
+    "pattern, text, expected_span",
+    [
+        ("needle", "a NEEDLE here", (2, 8)),
+        ("^start", "START here", (0, 5)),
+        ("finish$", "the FINISH", (4, 10)),
+        ("^whole$", "WHOLE", (0, 5)),
+        ("first|second", "use SECOND", (4, 10)),
+    ],
+)
+def test_osmatch_documented_matching_modes(
+    pattern: str, text: str, expected_span: tuple[int, int]
+) -> None:
+    """Cover sregex substring, anchors, alternatives, and case folding."""
+    assert WazuhRegex(pattern).os_match(text) == (True, [expected_span])
+
+
+@pytest.mark.parametrize("pattern", ["a.b", "a+b", "a*b", "a\\db", "a(b)"])
+def test_osmatch_treats_regular_expression_syntax_literally(pattern: str) -> None:
+    assert WazuhRegex(f"^{pattern}$").os_match(pattern)[0] is True
+
+
+def test_osmatch_negation_applies_to_all_alternatives() -> None:
+    tool = WazuhRegex("!debug|trace")
+
+    assert tool.os_match("an informational event") == (True, [])
+    assert tool.os_match("DEBUG event") == (False, [])
+    assert tool.os_match("trace event") == (False, [])
+
+
+def test_osmatch_uses_first_matching_alternative() -> None:
+    assert WazuhRegex("cat|catalog").os_match("catalog") == (True, [(0, 3)])
+
+
+def test_osmatch_clears_captures_created_by_another_engine() -> None:
+    tool = WazuhRegex(r"(\d+)")
+    assert tool.os_regex("42")[0] is True
+    assert tool.get_substrings() == ["42"]
+
+    tool.os_match("literal text")
+    assert tool.get_substrings() == []
 
 
 @pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))
