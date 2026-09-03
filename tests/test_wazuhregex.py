@@ -1,5 +1,10 @@
+import os
+import subprocess
+import sys
+
 import pytest
 
+from src.highlighter import Highlighter
 from src.wazuh_regex_lib import WazuhRegex
 
 # --- Data from C unit tests ---
@@ -247,3 +252,37 @@ def test_pattern_accepts_double_quoted_input() -> None:
 def test_pattern_rejects_unbalanced_quotes(pattern: str) -> None:
     with pytest.raises(ValueError, match="Pattern quotes must start and end"):
         WazuhRegex(pattern)
+
+
+@pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))
+def test_osregex_punctuation_class(character: str) -> None:
+    assert WazuhRegex(r"\p").os_regex(character)[0] is True
+
+
+def test_highlighter_applies_every_span() -> None:
+    highlighter = Highlighter(highlight_color="<", no_color=False)
+
+    assert highlighter.apply("one two", [(0, 3), (4, 7)]) == (
+        "<one\033[0m <two\033[0m"
+    )
+
+
+def test_highlighter_rejects_invalid_span() -> None:
+    with pytest.raises(ValueError, match="Invalid highlight span"):
+        Highlighter().apply("text", [(0, 5)])
+
+
+def test_cli_module_preserves_empty_input() -> None:
+    environment = {**os.environ, "NO_COLOR": "1"}
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex", "^$"],
+        input="\n",
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+
+    assert result.returncode == 0
+    assert "OS_Regex" in result.stdout
+    assert "Match" in result.stdout

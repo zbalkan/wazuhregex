@@ -15,21 +15,23 @@ class WazuhRegex:
     _INVALID_GROUP_ALTERNATION: Final[pcre2.Pattern] = pcre2.compile(r'\([^)]*\|[^)]*\)')
     _INVALID_MODIFIER_USE: Final[pcre2.Pattern] = pcre2.compile(r'(?<!\\[wdspWDSP\.])[*+]')
 
-    _TRANSLATION_RULES: Final[list[tuple[str, str]]] = [
-        (r'\\', r'\\'),
-        (r'\D', r'[^0-9]'),
-        (r'\W', r'[^a-zA-Z0-9_@\-]'),
-        (r'\S', r'[^ ]'),
-        (r'\d', r'[0-9]'),
-        (r'\w', r'[a-zA-Z0-9_@\-]'),
-        (r'\s', r'[ ]'),
-        (r'\t', r'\t'),
-        (r'\p', r'[-\(\)\*\+,.\\:;<=>?\"\'#$%&\|{}]'),
-        (r'\.', r'.'),
-        (r'\*', r'\\*'),
-        (r'[(', r'\[('),
-        (r')]', r')\]'),
-    ]
+    _TRANSLATIONS: Final[dict[str, str]] = {
+        r'\\': r'\\',
+        r'\D': r'[^0-9]',
+        r'\W': r'[^a-zA-Z0-9_@\-]',
+        r'\S': r'[^ ]',
+        r'\d': r'[0-9]',
+        r'\w': r'[a-zA-Z0-9_@\-]',
+        r'\s': r'[ ]',
+        r'\t': r'\t',
+        # Keep this character class self-contained. Running later string
+        # replacements over it can corrupt its escaped characters.
+        r'\p': r'''[\-()*+,.\\:;<=>?\[\]!"'#$%&|{}]''',
+        # OS_Regex uses an escaped dot for its any-character operator.
+        r'\.': r'.',
+        r'[(': r'\[(',
+        r')]': r')\]',
+    }
 
     def __init__(self, pattern: str) -> None:
         self._raw_pattern: str = self._normalize_pattern(pattern)
@@ -58,9 +60,21 @@ class WazuhRegex:
             raise ValueError(
                 "Invalid for OS_Regex: Modifier on bare character.")
 
-        translation = self._raw_pattern
-        for old, new in self._TRANSLATION_RULES:
-            translation = translation.replace(old, new)
+        # Translate the original pattern in one pass. Sequential ``replace``
+        # calls also rewrite text introduced by an earlier rule (notably the
+        # escapes inside ``\p``), producing a subtly different expression.
+        translation_parts: list[str] = []
+        index = 0
+        while index < len(self._raw_pattern):
+            token = self._raw_pattern[index:index + 2]
+            replacement = self._TRANSLATIONS.get(token)
+            if replacement is None:
+                translation_parts.append(self._raw_pattern[index])
+                index += 1
+            else:
+                translation_parts.append(replacement)
+                index += 2
+        translation = ''.join(translation_parts)
         try:
             return pcre2.compile(translation, flags=pcre2.IGNORECASE, jit=True)
         except Exception as e:

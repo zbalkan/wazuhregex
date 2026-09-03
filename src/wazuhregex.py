@@ -3,36 +3,46 @@
 import sys
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
-from wazuh_regex_lib import WazuhRegex
+if __package__:
+    from .wazuh_regex_lib import WazuhRegex
+else:
+    from wazuh_regex_lib import WazuhRegex
 
 
 def main() -> None:
     console = Console()
 
-    if len(sys.argv) != 2 or sys.argv[1] in ('-h', '--help'):
+    if len(sys.argv) != 2:
         console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
         sys.exit(1)
+    if sys.argv[1] in ('-h', '--help'):
+        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
+        return
 
     pattern = sys.argv[1]
 
     # Show pattern info
-    console.print(Panel(f"[bold cyan]Pattern:[/bold cyan] {pattern}",
+    console.print(Panel(f"[bold cyan]Pattern:[/bold cyan] {escape(pattern)}",
                         title="Wazuh Regex Tester"))
 
-    wazuh_tool = WazuhRegex(pattern)
-    console.print(
-        "[green]✓[/green] Pattern compiled successfully\n", style="dim")
+    try:
+        wazuh_tool = WazuhRegex(pattern)
+    except ValueError as error:
+        console.print(f"[red]Invalid pattern:[/red] {escape(str(error))}")
+        sys.exit(2)
+    console.print("[green]✓[/green] Pattern loaded\n", style="dim")
 
     for line in sys.stdin:
-        text = line.strip().strip('\n')
-        if not text:
-            continue
+        # Remove only the stream delimiter. Leading/trailing spaces and empty
+        # records are valid input to the Wazuh regex engines.
+        text = line.rstrip('\r\n')
 
         # Create results table
-        table = Table(title=f"Testing: {text}",
+        table = Table(title=f"Testing: {escape(text)}",
                       show_header=True, header_style="bold")
         table.add_column("Engine", style="cyan", width=15)
         table.add_column("Result", justify="center", width=10)

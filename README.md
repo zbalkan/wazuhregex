@@ -26,6 +26,7 @@ This project gives you a local, repeatable way to check behavior before shipping
 - Match spans for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.
 - Pattern normalization that accepts fully quoted patterns and rejects unbalanced quotes.
+- Lossless stdin handling, including blank records and leading or trailing whitespace.
 
 ## Requirements
 
@@ -48,6 +49,9 @@ python src/wazuhregex.py '<PATTERN>'
 
 # or from src/
 ./wazuhregex.py '<PATTERN>'
+
+# or as a Python module
+python -m src.wazuhregex '<PATTERN>'
 ```
 
 Then provide input lines via stdin (interactive typing or piping).

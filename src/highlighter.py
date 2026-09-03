@@ -33,9 +33,14 @@ class Highlighter:
         if self.no_color:
             return text
 
-        # To handle multiple spans correctly without overlapping, we build the
-        # string piece by piece. For this tool, we only get one span.
-        span = spans[0]
-        start, end = span
-
-        return f"{text[:start]}{self.highlight_color}{text[start:end]}{self.ENDC}{text[end:]}"
+        # Work backwards so inserting escape sequences does not invalidate the
+        # offsets of spans that have not been processed yet.
+        highlighted = text
+        for start, end in sorted(spans, reverse=True):
+            if not 0 <= start <= end <= len(text):
+                raise ValueError(f"Invalid highlight span: {(start, end)}")
+            highlighted = (
+                f"{highlighted[:start]}{self.highlight_color}"
+                f"{highlighted[start:end]}{self.ENDC}{highlighted[end:]}"
+            )
+        return highlighted
