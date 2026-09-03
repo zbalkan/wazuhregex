@@ -2,7 +2,21 @@ name: CI
 
 on:
   push:
+    paths-ignore: &documentation-only
+      - "**/*.md"
+      - "**/*.avif"
+      - "**/*.bmp"
+      - "**/*.gif"
+      - "**/*.ico"
+      - "**/*.jpeg"
+      - "**/*.jpg"
+      - "**/*.png"
+      - "**/*.svg"
+      - "**/*.tif"
+      - "**/*.tiff"
+      - "**/*.webp"
   pull_request:
+    paths-ignore: *documentation-only
 
 permissions:
   contents: read
