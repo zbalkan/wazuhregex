@@ -7,6 +7,8 @@ name = "wazuhregex"
 version = "0.1.0"
 description = "Test expressions with the regular expression engines supported by Wazuh"
 readme = "README.md"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
   { name = "Zafer Balkan", email = "zafer@zaferbalkan.com" },
@@ -17,6 +19,7 @@ classifiers = [
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
@@ -40,9 +43,9 @@ build = ["build>=1.2", "twine>=5"]
 wazuhregex = "wazuhregex.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/zbalkan/wazuh-regex"
-Repository = "https://github.com/zbalkan/wazuh-regex"
-Issues = "https://github.com/zbalkan/wazuh-regex/issues"
+Homepage = "https://github.com/zbalkan/wazuhregex"
+Repository = "https://github.com/zbalkan/wazuhregex"
+Issues = "https://github.com/zbalkan/wazuhregex/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,7 +1,6 @@
 # wazuhregex
 
-`wazuhregex` is a Python package and command-line tool that implements Wazuh regex behavior for local testing and development.
-It lets you validate one pattern against [all three Wazuh regex engines](https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/regex.html) in one run:
+`wazuhregex` is a Python package and command-line tool that implements Wazuh regex behavior for local testing and development. It lets you validate one pattern against [all three Wazuh regex engines](https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/regex.html) in one run:
 
 - `OS_Regex`
 - `OS_Match` (sregex)
@@ -130,6 +129,16 @@ python -m pytest tests/test_wazuhregex.py
 - `OS_Regex` emulation translates Wazuh-style tokens before compiling with `pcre2`.
 - Because the backend engine supports richer backtracking, edge cases may differ from the original C runtime in some complex patterns.
 - `OS_Match` is substring/anchor strategy based and does not return capture groups.
+
+## Project status and maintainer policy
+
+This is an independent compatibility tool, not an official Wazuh product. Its results should be checked against the Wazuh version used in production before they are relied upon for security-sensitive rules.
+
+The project is open-source, but upstream development is owner-maintained. You may use, modify, and fork it under the license, but unsolicited pull requests are not accepted. Bug reports and suggestions may be submitted through the issue tracker and will be considered at the maintainer's discretion. There is no commitment to provide support, response times, fixes, or continued maintenance.
+
+## License and third-party material
+
+This project is licensed under the GNU General Public License, version 2 only. See [`LICENSE`](LICENSE) for the full terms and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the origin and licensing of test material and dependencies.
 
 ## Building and publishing
 
