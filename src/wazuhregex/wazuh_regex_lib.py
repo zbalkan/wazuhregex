@@ -89,9 +89,15 @@ class WazuhRegex:
                 if index < len(self._raw_pattern) and self._raw_pattern[index] in "*+":
                     translation_parts.append(self._raw_pattern[index])
                     index += 1
-        translation = ''.join(translation_parts)
+        # Wazuh's legacy matcher folds only ASCII letters. PCRE2's caseless
+        # mode also folds Unicode characters (for example, ``k`` matches the
+        # Kelvin sign), so normalize both the expression and input ourselves
+        # instead of enabling PCRE2_IGNORECASE.
+        translation = ''.join(translation_parts).translate(
+            self._ASCII_LOWERCASE_TRANSLATION
+        )
         try:
-            return pcre2.compile(translation, flags=pcre2.IGNORECASE, jit=True)
+            return pcre2.compile(translation, jit=True)
         except pcre2.PatternError as error:
             raise ValueError(f"Invalid for OS_Regex: {error}") from error
 
@@ -127,7 +133,9 @@ class WazuhRegex:
 
         try:
             compiled = self._os_regex_compile()
-            matches = list(compiled.finditer(text))
+            matches = list(compiled.finditer(
+                text.translate(self._ASCII_LOWERCASE_TRANSLATION)
+            ))
             if not matches:
                 return False, []
 

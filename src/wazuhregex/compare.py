@@ -319,9 +319,16 @@ def _parse_pcre2(source: str) -> Node:
     branches = _split(source)
     if len(branches) > 1:
         return Choice(tuple(_parse_pcre2(x) for x in branches))
-    mapping = {"d": CharSet(_DIGITS), "D": CharSet(_DIGITS, True), "s": CharSet(_PCRE_SPACE),
-               "S": CharSet(_PCRE_SPACE, True), "w": CharSet(_ASCII_WORD), "W": CharSet(_ASCII_WORD, True),
-               "t": Literal("\t"), "r": Literal("\r"), "n": Literal("\n"), "f": Literal("\f")}
+    # PCRE2's Unicode-aware shorthand classes contain many more characters
+    # than the legacy Wazuh classes. Keep them opaque rather than claiming an
+    # unsafe conversion to OS_Regex (for example, PCRE2 ``\d`` also matches
+    # Arabic-Indic digits).
+    mapping = {
+        name: Unsupported(f"pcre2-unicode-{name}", f"\\{name}")
+        for name in "dDsSwW"
+    }
+    mapping.update({"t": Literal("\t"), "r": Literal("\r"),
+                    "n": Literal("\n"), "f": Literal("\f")})
     items: list[Node] = []
     literal: list[str] = []
     i = 0
@@ -553,7 +560,10 @@ def _emit_pcre(node: Node) -> str:
     if isinstance(node, Literal):
         return _escape_pcre(node.value)
     if isinstance(node, CharSet):
-        shortcuts = {(_DIGITS, False): r"\d", (_ASCII_WORD, False): r"\w", (_PCRE_SPACE, False): r"\s"}
+        # Explicit classes preserve OS_Regex's ASCII-only definitions under
+        # the Unicode-aware PCRE2 binding. Shorthand classes would broaden the
+        # language and make the displayed "equivalent" pattern incorrect.
+        shortcuts = {(_DIGITS, False): r"[0-9]"}
         return shortcuts.get((node.chars, node.negated), "["+("^" if node.negated else "")+"".join(map(_class_char, sorted(node.chars)))+"]")
     if isinstance(node, AnyChar):
         return "." if node.except_newline else r"(?s:.)"

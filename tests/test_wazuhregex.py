@@ -332,6 +332,12 @@ def test_osregex_is_case_insensitive_but_pcre2_is_case_sensitive() -> None:
     assert tool.pcre2_regex("ERROR")[0] is False
 
 
+def test_osregex_case_folding_is_ascii_only() -> None:
+    assert WazuhRegex("^k$").os_regex("K")[0] is True
+    assert WazuhRegex("^k$").os_regex("\N{KELVIN SIGN}")[0] is False
+    assert WazuhRegex("^é$").os_regex("É")[0] is False
+
+
 def test_osregex_captures_empty_and_unmatched_groups_distinctly() -> None:
     tool = WazuhRegex(r"^(\d*)(\s)(\w+)$")
 
@@ -545,6 +551,28 @@ def test_osregex_punctuation_class_does_not_include_space_in_conversion() -> Non
 
     assert converted.supported is True
     assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False
+
+
+@pytest.mark.parametrize(
+    "pattern, unicode_text",
+    [(r"\d", "٣"), (r"\w", "é"), (r"\s", "\N{NO-BREAK SPACE}")],
+)
+def test_regex_comparer_does_not_equate_pcre_unicode_classes_with_osregex(
+    pattern: str, unicode_text: str
+) -> None:
+    comparer = RegexComparer()
+
+    assert WazuhRegex(pattern).pcre2_regex(unicode_text)[0] is True
+    assert WazuhRegex(pattern).os_regex(unicode_text)[0] is False
+    assert comparer.convert(pattern, Engine.PCRE2, Engine.OSREGEX).supported is False
+
+
+def test_osregex_digit_class_converts_to_explicit_ascii_pcre_class() -> None:
+    converted = RegexComparer().convert(r"\d", Engine.OSREGEX, Engine.PCRE2)
+
+    assert converted.supported is True
+    assert converted.pattern == "[0-9]"
+    assert WazuhRegex(converted.pattern).pcre2_regex("٣")[0] is False
 
 
 @pytest.mark.parametrize("pattern", [r"a{2,3}", r"a{2,}"])
