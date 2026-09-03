@@ -63,7 +63,9 @@ def main() -> None:
     for line in sys.stdin:
         # Remove only the stream delimiter. Leading/trailing spaces and empty
         # records are valid input to the Wazuh regex engines.
-        text = _remove_line_delimiter(line)
+        text: str = (_remove_line_delimiter(line) or "").strip()
+        if not text:
+            continue
 
         # Create results table
         table = Table(title=f"Testing: {escape(text)}",
@@ -113,4 +115,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
+        print('bye!')
         pass
