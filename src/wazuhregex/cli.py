@@ -29,13 +29,13 @@ def _format_substrings(substrings: list[str]) -> str:
 
 def _format_spans(spans: list[tuple[int, int]]) -> str:
     """Format every match span instead of silently dropping later matches."""
-    return ", ".join(map(str, spans)) if spans else "—"
+    return ", ".join(map(str, spans)) if spans else "-"
 
 
 def _highlight_matches(text: str, spans: list[tuple[int, int]]) -> Text | str:
     """Return literal text with all non-empty match spans highlighted."""
     if not spans:
-        return "—"
+        return "-"
     return Text.from_ansi(Highlighter().apply(text, spans))
 
 
@@ -114,11 +114,11 @@ def _run() -> None:
     except ValueError as error:
         console.print(f"[red]Invalid pattern:[/red] {escape(str(error))}")
         sys.exit(2)
-    console.print("[green]✓[/green] Pattern loaded\n", style="dim")
+    console.print("[green]OK[/green] Pattern loaded\n", style="dim")
     validation_errors = wazuh_tool.validation_errors()
     for engine, error in validation_errors.items():
         console.print(
-            f"[yellow]⚠ {engine}:[/yellow] {escape(error)}"
+            f"[yellow]WARNING {engine}:[/yellow] {escape(error)}"
         )
     if validation_errors:
         console.print()
@@ -139,34 +139,34 @@ def _run() -> None:
         # Test OS_Regex
         is_match, spans = wazuh_tool.os_regex(text)
         if "OS_Regex" in validation_errors:
-            table.add_row("OS_Regex", "⚠ Invalid", "—", "—")
+            table.add_row("OS_Regex", "Invalid", "-", "-")
         elif is_match:
             substrings = wazuh_tool.get_substrings()
-            groups_str = _format_substrings(substrings) if substrings else "—"
-            table.add_row("OS_Regex", "✅ Match",
+            groups_str = _format_substrings(substrings) if substrings else "-"
+            table.add_row("OS_Regex", "Match",
                           _format_match(text, spans), groups_str)
         else:
-            table.add_row("OS_Regex", "❌ No Match", "—", "—")
+            table.add_row("OS_Regex", "No Match", "-", "-")
 
         # Test OS_Match
         is_match, spans = wazuh_tool.os_match(text)
         if is_match:
-            table.add_row("OS_Match", "✅ Match",
+            table.add_row("OS_Match", "Match",
                           _format_match(text, spans), "N/A")
         else:
-            table.add_row("OS_Match", "❌ No Match", "—", "N/A")
+            table.add_row("OS_Match", "No Match", "-", "N/A")
 
         # Test PCRE2
         is_match, spans = wazuh_tool.pcre2_regex(text)
         if "PCRE2" in validation_errors:
-            table.add_row("PCRE2", "⚠ Invalid", "—", "—")
+            table.add_row("PCRE2", "Invalid", "-", "-")
         elif is_match:
             substrings = wazuh_tool.get_substrings()
-            groups_str = _format_substrings(substrings) if substrings else "—"
-            table.add_row("PCRE2", "✅ Match",
+            groups_str = _format_substrings(substrings) if substrings else "-"
+            table.add_row("PCRE2", "Match",
                           _format_match(text, spans), groups_str)
         else:
-            table.add_row("PCRE2", "❌ No Match", "—", "—")
+            table.add_row("PCRE2", "No Match", "-", "-")
 
         console.print(table)
         console.print()  # Blank line between tests
@@ -180,7 +180,7 @@ def main() -> int:
         # Catch this in the console entry point rather than installing a signal
         # handler. This is portable and also works in pip/pipx launchers, which
         # call ``main`` directly instead of executing this module's guard.
-        print("bye!👋")
+        print("bye!")
         return 130
     return 0
 

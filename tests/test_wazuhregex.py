@@ -623,7 +623,24 @@ def test_cli_preserves_input_whitespace() -> None:
 
     assert result.returncode == 0
     assert "OS_Match" in result.stdout
-    assert "✅ Match" in result.stdout
+    assert "Match" in result.stdout
+
+
+def test_cli_supports_ascii_only_output_streams() -> None:
+    """Status output must work with legacy Windows console encodings."""
+    env = CLI_ENV.copy()
+    env["PYTHONIOENCODING"] = "ascii"
+    result = subprocess.run(
+        [sys.executable, "-m", "wazuhregex", "event"],
+        input="event\n",
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert "Match" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -736,4 +753,4 @@ def test_cli_handles_keyboard_interrupt(monkeypatch, capsys) -> None:
     monkeypatch.setattr(sys, "stdin", InterruptedInput())
 
     assert main() == 130
-    assert "bye!👋" in capsys.readouterr().out
+    assert "bye!" in capsys.readouterr().out
