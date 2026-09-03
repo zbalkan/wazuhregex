@@ -18,7 +18,7 @@ def main() -> None:
 
     if len(sys.argv) != 2:
         console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
-        sys.exit(1)
+        sys.exit(0)
     if sys.argv[1] in ('-h', '--help'):
         console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
         return
