@@ -230,28 +230,32 @@ def test_pcre2_multiple_group_matches() -> None:
     assert tool.get_substrings() == ["30", "2020"]
 
 
-def test_pattern_accepts_single_quoted_input() -> None:
+def test_pattern_preserves_single_quotes_as_literals() -> None:
     tool = WazuhRegex(r"'(\d+)'")
-    is_match, spans = tool.os_regex("30 Agustos 2020")
+    is_match, spans = tool.os_regex("value '30'")
 
     assert is_match is True
-    assert spans == [(0, 2), (11, 15)]
-    assert tool.get_substrings() == ["30", "2020"]
+    assert spans == [(6, 10)]
+    assert tool.get_substrings() == ["30"]
 
 
-def test_pattern_accepts_double_quoted_input() -> None:
+def test_pattern_preserves_double_quotes_as_literals() -> None:
     tool = WazuhRegex(r'"(\d+)"')
-    is_match, spans = tool.pcre2_regex("30 Agustos 2020")
+    is_match, spans = tool.pcre2_regex('value "30"')
 
     assert is_match is True
-    assert spans == [(0, 2), (11, 15)]
-    assert tool.get_substrings() == ["30", "2020"]
+    assert spans == [(6, 10)]
+    assert tool.get_substrings() == ["30"]
 
 
-@pytest.mark.parametrize("pattern", ["'(\\d+)", '"(\\d+)', "(\\d+)\""])
-def test_pattern_rejects_unbalanced_quotes(pattern: str) -> None:
-    with pytest.raises(ValueError, match="Pattern quotes must start and end"):
-        WazuhRegex(pattern)
+@pytest.mark.parametrize("metacharacter", list(".?[]{}"))
+def test_osregex_treats_pcre_only_metacharacters_as_literals(metacharacter: str) -> None:
+    assert WazuhRegex(metacharacter).os_regex(metacharacter)[0] is True
+    assert WazuhRegex(metacharacter).os_regex("unrelated")[0] is False
+
+
+def test_osmatch_removes_only_one_anchor_at_each_end() -> None:
+    assert WazuhRegex("^^event").os_match("^event log")[1] == [(0, 6)]
 
 
 @pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))

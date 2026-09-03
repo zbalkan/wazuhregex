@@ -25,7 +25,7 @@ This project gives you a local, repeatable way to check behavior before shipping
 - Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
 - Match spans for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.
-- Pattern normalization that accepts fully quoted patterns and rejects unbalanced quotes.
+- Literal handling for OS_Regex characters that are metacharacters only in PCRE2.
 - Lossless stdin handling, including blank records and leading or trailing whitespace.
 - Per-engine validation that distinguishes invalid syntax from a valid non-match.
 

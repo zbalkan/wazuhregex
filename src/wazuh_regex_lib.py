@@ -29,29 +29,22 @@ class WazuhRegex:
         r'\p': r'''[\-()*+,.\\:;<=>?\[\]!"'#$%&|{}]''',
         # OS_Regex uses an escaped dot for its any-character operator.
         r'\.': r'.',
-        r'[(': r'\[(',
-        r')]': r')\]',
     }
 
+    # These characters have no special meaning in OS_Regex, but do have one
+    # in the PCRE2 backend used for the emulation. Escape them when they occur
+    # unescaped so that the backend cannot accidentally accept PCRE syntax.
+    _PCRE_ONLY_METACHARACTERS: Final[frozenset[str]] = frozenset('.?[]{}')
+
     def __init__(self, pattern: str) -> None:
-        self._raw_pattern: str = self._normalize_pattern(pattern)
+        if not isinstance(pattern, str):
+            raise TypeError("pattern must be a string")
+        # Quotes are ordinary OS_Regex characters. Shells remove the quoting
+        # used to group a CLI argument before Python receives it, so stripping
+        # quotes here changes legitimate library patterns.
+        self._raw_pattern: str = pattern
         # This list is shared, so it must be cleared by each method.
         self._last_substrings: list[str] = []
-
-    @staticmethod
-    def _normalize_pattern(pattern: str) -> str:
-        if not pattern:
-            return pattern
-
-        if pattern[0] in ("'", '"'):
-            if len(pattern) < 2 or pattern[-1] != pattern[0]:
-                raise ValueError("Pattern quotes must start and end with the same quote character.")
-            return pattern[1:-1]
-
-        if pattern[-1] in ("'", '"'):
-            raise ValueError("Pattern quotes must start and end with the same quote character.")
-
-        return pattern
 
     def _os_regex_compile(self) -> pcre2.Pattern:
         if self._INVALID_GROUP_ALTERNATION.search(self._raw_pattern):
@@ -69,7 +62,17 @@ class WazuhRegex:
             token = self._raw_pattern[index:index + 2]
             replacement = self._TRANSLATIONS.get(token)
             if replacement is None:
-                translation_parts.append(self._raw_pattern[index])
+                character = self._raw_pattern[index]
+                # Preserve escapes not handled by OS_Regex's shorthand table
+                # as a unit. Otherwise the escaped character is visited again
+                # and mistaken for an unescaped PCRE-only metacharacter.
+                if character == '\\' and len(token) == 2:
+                    translation_parts.append(token)
+                    index += 2
+                    continue
+                if character in self._PCRE_ONLY_METACHARACTERS:
+                    translation_parts.append('\\')
+                translation_parts.append(character)
                 index += 1
             else:
                 translation_parts.append(replacement)
@@ -143,7 +146,12 @@ class WazuhRegex:
 
         for sub in pattern.split('|'):
             is_start, is_end = sub.startswith('^'), sub.endswith('$')
-            clean_sub = sub.strip('^$')
+            # Only the first and last characters are anchors. ``str.strip``
+            # removes every run of those characters and silently changes the
+            # meaning (and reported span) of inputs such as ``^^event``.
+            start_index = 1 if is_start else 0
+            end_index = -1 if is_end else None
+            clean_sub = sub[start_index:end_index]
             if is_start and is_end:
                 os_match_compiled.append(("_exact", clean_sub, is_negated))
             elif is_start:
