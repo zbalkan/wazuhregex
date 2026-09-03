@@ -6,7 +6,7 @@ class Highlighter:
     RED = '\033[91m'
     ENDC = '\033[0m'
 
-    def __init__(self, highlight_color: str = RED, no_color: bool = False) -> None:
+    def __init__(self, highlight_color: str = RED) -> None:
         """
         Initializes the highlighter with a specific color.
 
@@ -14,7 +14,6 @@ class Highlighter:
             highlight_color (str): The ANSI escape code for highlighting.
         """
         self.highlight_color: str = highlight_color
-        self.no_color: bool = no_color
 
     def apply(self, text: str, spans: list[tuple[int, int]]) -> str:
         """
@@ -28,9 +27,6 @@ class Highlighter:
             str: The formatted string with ANSI color codes.
         """
         if not spans:
-            return text
-
-        if self.no_color:
             return text
 
         # Work backwards so inserting escape sequences does not invalidate the

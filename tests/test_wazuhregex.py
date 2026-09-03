@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 
@@ -264,7 +263,7 @@ def test_osregex_punctuation_class(character: str) -> None:
 
 
 def test_highlighter_applies_every_span() -> None:
-    highlighter = Highlighter(highlight_color="<", no_color=False)
+    highlighter = Highlighter(highlight_color="<")
 
     assert highlighter.apply("one two", [(0, 3), (4, 7)]) == (
         "<one\033[0m <two\033[0m"
@@ -277,14 +276,12 @@ def test_highlighter_rejects_invalid_span() -> None:
 
 
 def test_cli_module_preserves_empty_input() -> None:
-    environment = {**os.environ, "NO_COLOR": "1"}
     result = subprocess.run(
         [sys.executable, "-m", "src.wazuhregex", "^$"],
         input="\n",
         text=True,
         capture_output=True,
         check=False,
-        env=environment,
     )
 
     assert result.returncode == 0
@@ -308,14 +305,12 @@ def test_validation_errors_reports_invalid_pcre2() -> None:
 
 
 def test_cli_distinguishes_invalid_pattern_from_non_match() -> None:
-    environment = {**os.environ, "NO_COLOR": "1"}
     result = subprocess.run(
         [sys.executable, "-m", "src.wazuhregex", "a+"],
         input="bbb\n",
         text=True,
         capture_output=True,
         check=False,
-        env=environment,
     )
 
     assert result.returncode == 0
