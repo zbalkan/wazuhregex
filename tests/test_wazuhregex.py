@@ -185,9 +185,9 @@ EXTRACTION_DATA: list[tuple[str, str, list[str]]] = [
     (r"123 (\d+.\d.\d.\d\d*\d*)", "123 45.6.5.567", ["45.6.5.567"]),
     (r"from (\S*\d+.\d+.\d+.\d\d*\d*)",
      "sshd[21576]: Illegal user web14 from ::ffff:212.227.60.55", ["::ffff:212.227.60.55"]),
-    (r"^sshd\[\d+\]: Accepted \S+ for (\S+) from (\S+) port ",
+    (r"^sshd[\d+]: Accepted \S+ for (\S+) from (\S+) port ",
      "sshd[21405]: Accepted password for root from 192.1.1.1 port 6023", ["root", "192.1.1.1"]),
-    (r": \((\S+)@(\S+)\) \[", "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
+    (r": \((\S+)@(\S+)\) [", "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
      ["?", "enigma.lab.ossec.net"]),
 ]
 
@@ -716,6 +716,22 @@ def test_cli_help_does_not_treat_option_as_a_pattern(help_option: str) -> None:
     assert result.returncode == 0
     assert "Usage:" in result.stdout
     assert "Pattern:" not in result.stdout
+    assert "20 input lines per run" in result.stdout
+    assert "100 ms evaluation time per line" in result.stdout
+
+
+def test_cli_rejects_more_than_twenty_physical_input_lines() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "wazuhregex", "event"],
+        input="\n" * 21,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=CLI_ENV,
+    )
+
+    assert result.returncode == 2
+    assert "limited to 20 lines per run" in result.stdout
 
 
 def test_cli_requires_exactly_one_pattern() -> None:
