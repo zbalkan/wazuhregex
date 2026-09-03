@@ -17,11 +17,8 @@ def main() -> None:
     console = Console()
 
     if len(sys.argv) != 2:
-        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
+        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>' [-h/--help]")
         sys.exit(0)
-    if sys.argv[1] in ('-h', '--help'):
-        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
-        return
 
     pattern = sys.argv[1]
 
