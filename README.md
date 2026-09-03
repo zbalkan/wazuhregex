@@ -36,7 +36,7 @@ This project gives you a local, repeatable way to check behavior before shipping
 
 ## Installation
 
-The application requires Python 3.11 or newer, with Python 3.13 recommended. For command-line use—the recommended installation for most users—use [pipx](https://pipx.pypa.io/). It installs the application and its dependencies in an isolated environment while exposing the `wazuhregex` command on your `PATH`:
+The application requires Python 3.11 or newer, with Python 3.13 recommended. For command-line use -the recommended installation for most users- use [pipx](https://pipx.pypa.io/). It installs the application and its dependencies in an isolated environment while exposing the `wazuhregex` command on your `PATH`:
 
 ```bash
 pipx install wazuhregex
