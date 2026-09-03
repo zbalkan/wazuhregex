@@ -45,79 +45,28 @@ class WazuhRegex:
             raise TypeError("pattern must be a string")
         self._raw_pattern: str = pattern
         self._last_substrings: list[str] = []
-
-    def _os_regex_compile(self) -> pcre2.Pattern:
-        if self._has_group_alternation(self._raw_pattern):
-            raise ValueError("Invalid for OS_Regex: Alternation '|' in group.")
-        if self._has_invalid_group_nesting(self._raw_pattern):
-            raise ValueError("Invalid for OS_Regex: Nested or unbalanced parentheses.")
-
-        translation_parts: list[str] = []
-        index = 0
-        while index < len(self._raw_pattern):
-            token = self._raw_pattern[index:index + 2]
-            replacement = self._TRANSLATIONS.get(token)
-            if replacement is None:
-                character = self._raw_pattern[index]
-                if character in "*+":
-                    raise ValueError(
-                        "Invalid for OS_Regex: Modifier on bare character."
-                    )
-                if character == '\\':
-                    if len(token) != 2:
-                        raise ValueError("Invalid for OS_Regex: Trailing backslash.")
-                    quoted = token[1]
-                    if quoted not in self._OSREGEX_LITERAL_ESCAPES:
-                        raise ValueError(
-                            f"Invalid for OS_Regex: Unsupported escape \\{quoted}."
-                        )
-                    if quoted in self._PCRE_METACHARACTERS:
-                        translation_parts.append('\\')
-                    translation_parts.append(quoted)
-                    index += 2
-                    continue
-                if character in self._PCRE_ONLY_METACHARACTERS:
-                    translation_parts.append('\\')
-                translation_parts.append(character)
-                index += 1
-            else:
-                translation_parts.append(replacement)
-                index += 2
-                if index < len(self._raw_pattern) and self._raw_pattern[index] in "*+":
-                    translation_parts.append(self._raw_pattern[index])
-                    index += 1
-
-        translation = ''.join(translation_parts).translate(
-            self._ASCII_LOWERCASE_TRANSLATION
-        )
-        try:
-            return pcre2.compile(translation, flags=pcre2.ASCII, jit=True)
-        except pcre2.PatternError as error:
-            raise ValueError(f"Invalid for OS_Regex: {error}") from error
+        # Patterns are immutable for the lifetime of this object. Cache every
+        # compiled representation (and compile failure) after its first use so
+        # repeated line evaluation does not pay O(pattern_length) setup again.
+        self._osregex_compiled: pcre2.Pattern | None = None
+        self._osregex_compile_error: str | None = None
+        self._pcre2_compiled: pcre2.Pattern | None = None
+        self._pcre2_compile_error: str | None = None
+        self._osmatch_compiled: tuple[tuple[str, str, bool], ...] | None = None
 
     @staticmethod
-    def _has_group_alternation(pattern: str) -> bool:
-        """Return whether an unescaped alternation occurs inside a group."""
-        group_depth = 0
-        escaped = False
-        for character in pattern:
-            if escaped:
-                escaped = False
-            elif character == '\\':
-                escaped = True
-            elif character == '(':
-                group_depth += 1
-            elif character == ')':
-                group_depth = max(0, group_depth - 1)
-            elif character == '|' and group_depth:
-                return True
-        return False
+    def _validate_osregex_groups(pattern: str) -> None:
+        """Validate OS_Regex grouping in one linear scan.
 
-    @staticmethod
-    def _has_invalid_group_nesting(pattern: str) -> bool:
-        """Wazuh OS_Regex allows one parenthesis level and requires balance."""
+        Wazuh allows one parenthesis level, rejects alternation inside a group,
+        and requires balanced parentheses. Alternation errors retain precedence
+        over nesting errors to match the previous diagnostics.
+        """
         group_depth = 0
         escaped = False
+        has_group_alternation = False
+        has_invalid_nesting = False
+
         for character in pattern:
             if escaped:
                 escaped = False
@@ -128,12 +77,79 @@ class WazuhRegex:
             if character == '(':
                 group_depth += 1
                 if group_depth > 1:
-                    return True
+                    has_invalid_nesting = True
             elif character == ')':
                 group_depth -= 1
                 if group_depth < 0:
-                    return True
-        return group_depth != 0
+                    has_invalid_nesting = True
+                    group_depth = 0
+            elif character == '|' and group_depth:
+                has_group_alternation = True
+
+        if group_depth != 0:
+            has_invalid_nesting = True
+        if has_group_alternation:
+            raise ValueError("Invalid for OS_Regex: Alternation '|' in group.")
+        if has_invalid_nesting:
+            raise ValueError("Invalid for OS_Regex: Nested or unbalanced parentheses.")
+
+    def _os_regex_compile(self) -> pcre2.Pattern:
+        if self._osregex_compiled is not None:
+            return self._osregex_compiled
+        if self._osregex_compile_error is not None:
+            raise ValueError(self._osregex_compile_error)
+
+        try:
+            self._validate_osregex_groups(self._raw_pattern)
+
+            translation_parts: list[str] = []
+            index = 0
+            while index < len(self._raw_pattern):
+                token = self._raw_pattern[index:index + 2]
+                replacement = self._TRANSLATIONS.get(token)
+                if replacement is None:
+                    character = self._raw_pattern[index]
+                    if character in "*+":
+                        raise ValueError(
+                            "Invalid for OS_Regex: Modifier on bare character."
+                        )
+                    if character == '\\':
+                        if len(token) != 2:
+                            raise ValueError("Invalid for OS_Regex: Trailing backslash.")
+                        quoted = token[1]
+                        if quoted not in self._OSREGEX_LITERAL_ESCAPES:
+                            raise ValueError(
+                                f"Invalid for OS_Regex: Unsupported escape \\{quoted}."
+                            )
+                        if quoted in self._PCRE_METACHARACTERS:
+                            translation_parts.append('\\')
+                        translation_parts.append(quoted)
+                        index += 2
+                        continue
+                    if character in self._PCRE_ONLY_METACHARACTERS:
+                        translation_parts.append('\\')
+                    translation_parts.append(character)
+                    index += 1
+                else:
+                    translation_parts.append(replacement)
+                    index += 2
+                    if index < len(self._raw_pattern) and self._raw_pattern[index] in "*+":
+                        translation_parts.append(self._raw_pattern[index])
+                        index += 1
+
+            translation = ''.join(translation_parts).translate(
+                self._ASCII_LOWERCASE_TRANSLATION
+            )
+            try:
+                compiled = pcre2.compile(translation, flags=pcre2.ASCII, jit=True)
+            except pcre2.PatternError as error:
+                raise ValueError(f"Invalid for OS_Regex: {error}") from error
+        except ValueError as error:
+            self._osregex_compile_error = str(error)
+            raise
+
+        self._osregex_compiled = compiled
+        return compiled
 
     @classmethod
     def _normalize_wazuh_pcre2(cls, pattern: str) -> str:
@@ -219,14 +235,26 @@ class WazuhRegex:
         return ''.join(parts)
 
     def _pcre2_compile(self) -> pcre2.Pattern:
-        pattern = self._normalize_wazuh_pcre2(self._raw_pattern)
+        if self._pcre2_compiled is not None:
+            return self._pcre2_compiled
+        if self._pcre2_compile_error is not None:
+            raise ValueError(self._pcre2_compile_error)
+
         try:
-            # Wazuh 4.x invokes pcre2_compile() with option bits 0. The Python
-            # binding turns on UCP for str patterns; ASCII disables that wrapper
-            # default so \d/\w/\s retain PCRE2's default ASCII semantics.
-            return pcre2.compile(pattern, flags=pcre2.ASCII, jit=True)
-        except pcre2.PatternError as error:
-            raise ValueError(f"Invalid for PCRE2: {error}") from error
+            pattern = self._normalize_wazuh_pcre2(self._raw_pattern)
+            try:
+                # Wazuh 4.x invokes pcre2_compile() with option bits 0. The Python
+                # binding turns on UCP for str patterns; ASCII disables that wrapper
+                # default so \d/\w/\s retain PCRE2's default ASCII semantics.
+                compiled = pcre2.compile(pattern, flags=pcre2.ASCII, jit=True)
+            except pcre2.PatternError as error:
+                raise ValueError(f"Invalid for PCRE2: {error}") from error
+        except ValueError as error:
+            self._pcre2_compile_error = str(error)
+            raise
+
+        self._pcre2_compiled = compiled
+        return compiled
 
     @staticmethod
     def _validate_text(text: str) -> None:
@@ -242,26 +270,27 @@ class WazuhRegex:
 
         try:
             compiled = self._os_regex_compile()
-            matches = list(compiled.finditer(
-                text.translate(self._ASCII_LOWERCASE_TRANSLATION)
-            ))
-            if not matches:
-                return False, []
-
-            spans: list[tuple[int, int]] = []
-            substrings: list[str] = []
-            for match in matches:
-                spans.append(match.span())
-                groups: list[str] = [group for group in match.groups() if group is not None]
-                if groups:
-                    substrings.extend(groups)
-                elif match.group(0):
-                    substrings.append(str(match.group(0)))
-
-            self._last_substrings = substrings
-            return True, spans
         except ValueError:
             return False, []
+
+        matches = list(compiled.finditer(
+            text.translate(self._ASCII_LOWERCASE_TRANSLATION)
+        ))
+        if not matches:
+            return False, []
+
+        spans: list[tuple[int, int]] = []
+        substrings: list[str] = []
+        for match in matches:
+            spans.append(match.span())
+            groups: list[str] = [group for group in match.groups() if group is not None]
+            if groups:
+                substrings.extend(groups)
+            elif match.group(0):
+                substrings.append(str(match.group(0)))
+
+        self._last_substrings = substrings
+        return True, spans
 
     def get_substrings(self) -> list[str]:
         """Returns substrings captured by the last successful os_regex or pcre2_regex call."""
@@ -282,7 +311,10 @@ class WazuhRegex:
 
         return errors
 
-    def _os_match_compile(self) -> list[tuple[str, str, bool]]:
+    def _os_match_compile(self) -> tuple[tuple[str, str, bool], ...]:
+        if self._osmatch_compiled is not None:
+            return self._osmatch_compiled
+
         os_match_compiled: list[tuple[str, str, bool]] = []
         pattern = self._raw_pattern
         is_negated = pattern.startswith('!')
@@ -293,7 +325,9 @@ class WazuhRegex:
             is_start, is_end = sub.startswith('^'), sub.endswith('$')
             start_index = 1 if is_start else 0
             end_index = -1 if is_end else None
-            clean_sub = sub[start_index:end_index]
+            clean_sub = sub[start_index:end_index].translate(
+                self._ASCII_LOWERCASE_TRANSLATION
+            )
             if is_start and is_end:
                 os_match_compiled.append(("_exact", clean_sub, is_negated))
             elif is_start:
@@ -302,44 +336,37 @@ class WazuhRegex:
                 os_match_compiled.append(("_endswith", clean_sub, is_negated))
             else:
                 os_match_compiled.append(("_substring", clean_sub, is_negated))
-        return os_match_compiled
+
+        self._osmatch_compiled = tuple(os_match_compiled)
+        return self._osmatch_compiled
 
     def os_match(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Emulates the OSMatch_Execute (sregex) engine."""
         self._last_substrings = []
         self._validate_text(text)
         text_lower = text.translate(self._ASCII_LOWERCASE_TRANSLATION)
-        match_found = False
-        match_spans: list[tuple[int, int]] = []
 
         os_match_compiled = self._os_match_compile()
         is_negated_rule = os_match_compiled[0][2] if os_match_compiled else False
-        for strategy, pattern_arg, _ in os_match_compiled:
-            pattern_lower = pattern_arg.translate(
-                self._ASCII_LOWERCASE_TRANSLATION
-            )
+        for strategy, pattern_lower, _ in os_match_compiled:
             start, end = -1, -1
             if strategy == "_exact" and text_lower == pattern_lower:
                 start, end = 0, len(text)
             elif strategy == "_startswith" and text_lower.startswith(pattern_lower):
-                start, end = 0, len(pattern_arg)
+                start, end = 0, len(pattern_lower)
             elif strategy == "_endswith" and text_lower.endswith(pattern_lower):
-                start = len(text) - len(pattern_arg)
+                start = len(text) - len(pattern_lower)
                 end = len(text)
             elif strategy == "_substring":
-                try:
-                    start = text_lower.index(pattern_lower)
-                    end = start + len(pattern_arg)
-                except ValueError:
-                    continue
+                start = text_lower.find(pattern_lower)
+                if start != -1:
+                    end = start + len(pattern_lower)
 
             if start != -1:
-                match_found = True
-                match_spans.append((start, end))
-                break
+                final_match = not is_negated_rule
+                return final_match, [(start, end)] if final_match else []
 
-        final_match = not match_found if is_negated_rule else match_found
-        return final_match, match_spans if final_match else []
+        return is_negated_rule, []
 
     def pcre2_regex(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Executes the pattern using Wazuh 4.x PCRE2 defaults."""
