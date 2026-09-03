@@ -381,16 +381,22 @@ def _parse_pcre2(source: str) -> Node:
 _PARSERS = {Engine.PCRE2: _parse_pcre2, Engine.OSREGEX: _parse_osregex, Engine.SREGEX: _parse_sregex}
 
 
-def detect_engine(source: str) -> Engine:
+def detect_engine(source: str) -> Engine | None:
     """Guess the engine whose spelling the user supplied.
 
-    There is deliberately no attempt to claim certainty here: most literal
-    expressions, anchors, and several character classes are valid in more
-    than one Wazuh engine. Prefer the literal-oriented SRegex engine for a
-    non-empty literal and PCRE2 for remaining ambiguous regex syntax.
+    There is deliberately no attempt to claim certainty here: a plain literal
+    is valid in every engine and therefore has no original engine. Ambiguous
+    regex syntax continues to fall back to PCRE2.
     """
     if not isinstance(source, str):
         raise TypeError("pattern must be a string")
+
+    # This is intentionally the first syntax check. A non-empty pattern with
+    # no character that is special to any of the three engines is a shared
+    # literal, so attributing it to one particular engine would be misleading.
+    special_characters = frozenset(r"!\.^$|?*+()[]{}")
+    if source and not any(character in special_characters for character in source):
+        return None
 
     # A leading bang is the OS_Match negation operator. In the other engines
     # it is merely a literal, making this the only strong SRegex signal.
@@ -408,13 +414,6 @@ def detect_engine(source: str) -> Engine:
             escaped = False
         elif character == "\\":
             escaped = True
-
-    # A pattern with no regex operators is most naturally an OS_Match literal.
-    # Keep the empty pattern on the PCRE2 fallback because it provides no
-    # positive evidence for any engine.
-    regex_syntax = frozenset(r"\.^$*+?{}[]()|")
-    if source and not any(character in regex_syntax for character in source):
-        return Engine.SREGEX
 
     return Engine.PCRE2
 

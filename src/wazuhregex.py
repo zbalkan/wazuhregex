@@ -57,16 +57,21 @@ def _pattern_header(pattern: str) -> Table:
     """Build a header containing safe equivalents of the detected input."""
     comparer = RegexComparer()
     original_engine = comparer.detect_engine(pattern)
-    patterns = {original_engine: pattern}
-    try:
-        source = comparer.parse(pattern, original_engine)
-        patterns.update(
-            {alternative.engine: alternative.pattern
-             for alternative in comparer.alternatives(source)}
-        )
-    except ValueError:
-        # Compilation diagnostics below remain the authority for invalid input.
-        pass
+    if original_engine is None:
+        # Plain literals use the same spelling in every engine. Avoid parsing
+        # and conversion work, and do not imply that one engine was original.
+        patterns = dict.fromkeys(Engine, pattern)
+    else:
+        patterns = {original_engine: pattern}
+        try:
+            source = comparer.parse(pattern, original_engine)
+            patterns.update(
+                {alternative.engine: alternative.pattern
+                 for alternative in comparer.alternatives(source)}
+            )
+        except ValueError:
+            # Compilation diagnostics remain the authority for invalid input.
+            pass
 
     table = Table(title="Wazuh Regex Tester", show_header=True,
                   header_style="bold")
@@ -82,7 +87,9 @@ def _pattern_header(pattern: str) -> Table:
         table.add_row(
             f"{label} (orig.)" if engine == original_engine else label,
             escape(alternative) if alternative is not None else "",
-            "" if alternative is not None else "[dim]Not safely convertible[/dim]",
+            ("[dim]Literal[/dim]" if original_engine is None else "")
+            if alternative is not None
+            else "[dim]Not safely convertible[/dim]",
         )
     return table
 

@@ -25,9 +25,10 @@ This project gives you a local, repeatable way to check behavior before shipping
 - Heuristically detect whether the supplied pattern uses OS_Regex, OS_Match,
   or PCRE2 syntax, mark that engine with `(orig.)`, and show round-trip-validated
   alternatives whenever the input can be represented safely. Plain, non-empty
-  literals are treated as OS_Match patterns; ambiguous regex syntax continues
-  to default to PCRE2. Conversion warnings appear in a separate `Remarks`
-  column so unavailable equivalent-pattern cells remain empty.
+  literals have no detected original engine because they are valid in all
+  three, and are identified as literals in the `Remarks` column. Ambiguous
+  regex syntax continues to default to PCRE2. Conversion warnings also appear
+  in `Remarks` so unavailable equivalent-pattern cells remain empty.
 - Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
 - Highlighted matches and every match span for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.

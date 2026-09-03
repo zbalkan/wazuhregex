@@ -549,13 +549,13 @@ def test_pattern_header_shows_all_safe_alternatives() -> None:
         (r"^message\p+$", Engine.OSREGEX),
         (r"^file\.+$", Engine.OSREGEX),
         ("!debug|trace", Engine.SREGEX),
-        ("literal", Engine.SREGEX),
+        ("literal", None),
         ("^ordinary$", Engine.PCRE2),
         ("", Engine.PCRE2),
     ],
 )
 def test_regex_comparer_detects_original_engine_heuristically(
-    pattern: str, expected: Engine
+    pattern: str, expected: Engine | None
 ) -> None:
     assert RegexComparer().detect_engine(pattern) == expected
 
@@ -565,7 +565,6 @@ def test_regex_comparer_detects_original_engine_heuristically(
     [
         (r"^message\p+$", "OS_Regex (orig.)"),
         ("!debug|trace", "OS_Match (orig.)"),
-        ("literal", "OS_Match (orig.)"),
     ],
 )
 def test_pattern_header_marks_detected_original_engine(
@@ -575,6 +574,19 @@ def test_pattern_header_marks_detected_original_engine(
     console.print(_pattern_header(pattern))
 
     assert original_label in console.export_text()
+
+
+def test_literal_pattern_header_has_no_original_engine() -> None:
+    table = _pattern_header("zafer")
+    rendered = Console(record=True, width=100)
+    rendered.print(table)
+    output = rendered.export_text()
+
+    assert "(orig.)" not in output
+    assert [cell for cell in table.columns[1].cells] == ["zafer"] * 3
+    assert [cell for cell in table.columns[2].cells] == [
+        "[dim]Literal[/dim]"
+    ] * 3
 
 
 def test_pattern_header_places_conversion_warning_in_remarks_column() -> None:
