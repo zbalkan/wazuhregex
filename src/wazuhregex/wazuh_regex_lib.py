@@ -38,6 +38,7 @@ class WazuhRegex:
     _ASCII_LOWERCASE_TRANSLATION: Final[dict[int, int]] = str.maketrans(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
     )
+    _HEX_DIGITS: Final[frozenset[str]] = frozenset("0123456789abcdefABCDEF")
 
     def __init__(self, pattern: str) -> None:
         if not isinstance(pattern, str):
@@ -134,13 +135,14 @@ class WazuhRegex:
                     return True
         return group_depth != 0
 
-    @staticmethod
-    def _normalize_wazuh_pcre2(pattern: str) -> str:
-        """Normalize wrapper-specific syntax differences from Wazuh's PCRE2.
+    @classmethod
+    def _normalize_wazuh_pcre2(cls, pattern: str) -> str:
+        r"""Normalize Python-wrapper differences from Wazuh 4.x PCRE2 defaults.
 
-        The Python binding enables PCRE2_ALT_BSUX internally, which rejects the
-        normal PCRE2 braced hexadecimal spelling. Wazuh 4.x compiles with option
-        bits 0, where \x{hh..} is valid in the 8-bit engine for values <= 0xff.
+        Wazuh calls pcre2_compile() with option bits 0. pcre2.py forces
+        PCRE2_ALT_BSUX, UTF, and UCP for Python strings. UCP is disabled at
+        compile time separately; this function restores escape spellings that
+        ALT_BSUX changes while retaining the string API.
         """
         parts: list[str] = []
         index = 0
@@ -155,29 +157,60 @@ class WazuhRegex:
                 index += 1
                 continue
 
-            if pattern[index + 1] == '\\':
+            escaped = pattern[index + 1]
+            if escaped == '\\':
                 parts.append('\\\\')
                 index += 2
                 continue
 
-            if pattern[index + 1:index + 3] == 'x{':
-                end = pattern.find('}', index + 3)
-                if end < 0:
-                    parts.append(pattern[index:])
-                    break
-                digits = pattern[index + 3:end]
-                try:
+            # PCRE2 without ALT_BSUX rejects \u and \U. The Python wrapper
+            # enables them, so reject them before compilation.
+            if escaped in {'u', 'U'}:
+                raise ValueError(
+                    f"Invalid for Wazuh PCRE2: unsupported escape \\{escaped}."
+                )
+
+            if escaped == 'x':
+                if index + 2 < len(pattern) and pattern[index + 2] == '{':
+                    end = pattern.find('}', index + 3)
+                    if end < 0:
+                        parts.append(pattern[index:])
+                        break
+                    digits = pattern[index + 3:end]
+                    if not digits or any(ch not in cls._HEX_DIGITS for ch in digits):
+                        parts.append(pattern[index:end + 1])
+                        index = end + 1
+                        continue
                     value = int(digits, 16)
-                except ValueError:
-                    parts.append(pattern[index:end + 1])
+                    if value > 0xFF:
+                        raise ValueError(
+                            "Invalid for Wazuh PCRE2: braced hex value exceeds 8-bit range."
+                        )
+                    parts.append(f"\\x{value:02x}")
                     index = end + 1
                     continue
-                if not digits or value > 0xFF:
-                    raise ValueError(
-                        "Invalid for Wazuh PCRE2: braced hex value exceeds 8-bit range."
-                    )
-                parts.append(f"\\x{value:02x}")
-                index = end + 1
+
+                # With Wazuh's normal PCRE2 options, \x consumes zero, one, or
+                # two hexadecimal digits. ALT_BSUX requires exactly two.
+                first = pattern[index + 2] if index + 2 < len(pattern) else ''
+                second = pattern[index + 3] if index + 3 < len(pattern) else ''
+                if first in cls._HEX_DIGITS and second in cls._HEX_DIGITS:
+                    parts.append(pattern[index:index + 4])
+                    index += 4
+                elif first in cls._HEX_DIGITS:
+                    parts.append(f"\\x0{first}")
+                    index += 3
+                else:
+                    parts.append(r"\x00")
+                    index += 2
+                continue
+
+            # pcre2.py always sets PCRE2_NEVER_BACKSLASH_C. In Wazuh's
+            # non-UTF 8-bit default, \C means one code unit; for the string API
+            # the closest equivalent is one character including newline.
+            if escaped == 'C':
+                parts.append(r"(?s:.)")
+                index += 2
                 continue
 
             parts.append(pattern[index:index + 2])
