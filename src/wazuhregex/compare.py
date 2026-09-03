@@ -124,9 +124,10 @@ _WORD_OS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 _DIGITS = frozenset("0123456789")
 _SPACE = frozenset(" ")
 _TAB = frozenset("\t")
-_PUNCT_OS = frozenset("()*+,-.\\:;<=>?[]!\"'#$%&|{}")
-_PCRE_SPACE = frozenset("\t\r\n\f ")
+_PUNCT_OS = frozenset("()*+,-.:;<=>?[]!\"'#$%&|{}")
+_PCRE_SPACE = frozenset("\t\n\v\f\r ")
 _ASCII_WORD = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+_OSREGEX_LITERAL_ESCAPES = frozenset("()$|<\\")
 
 
 class RegexSyntaxError(ValueError):
@@ -175,8 +176,6 @@ def _matching(source: str, start: int, opening="(", closing=")") -> int | None:
             escaped = True
             continue
         if ch == opening:
-            # Character classes do not nest; an unescaped '[' inside one is
-            # an ordinary member. Parenthesized groups, by contrast, do nest.
             if opening == "[" and depth:
                 continue
             depth += 1
@@ -185,6 +184,18 @@ def _matching(source: str, start: int, opening="(", closing=")") -> int | None:
             if depth == 0:
                 return i
     return None
+
+
+def _contains_unescaped(source: str, target: str) -> bool:
+    escaped = False
+    for ch in source:
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == target:
+            return True
+    return False
 
 
 def _parse_sregex(source: str) -> Node:
@@ -224,6 +235,7 @@ def _parse_osregex(source: str) -> Node:
         if literal:
             items.append(Literal("".join(literal)))
             literal.clear()
+
     while i < len(source):
         ch = source[i]
         if ch == "^" and i == 0:
@@ -238,7 +250,13 @@ def _parse_osregex(source: str) -> Node:
             flush()
             if i+1 >= len(source):
                 raise RegexSyntaxError("trailing backslash")
-            node = mapping.get(source[i+1], Literal(source[i+1]))
+            escaped = source[i+1]
+            if escaped in mapping:
+                node = mapping[escaped]
+            elif escaped in _OSREGEX_LITERAL_ESCAPES:
+                node = Literal(escaped)
+            else:
+                return Unsupported("osregex-invalid-escape", source)
             i += 2
             if i < len(source) and source[i] in "*+":
                 node = Repeat(node, 0 if source[i] == "*" else 1, None)
@@ -252,6 +270,8 @@ def _parse_osregex(source: str) -> Node:
             if end is None:
                 raise RegexSyntaxError("unbalanced parenthesis")
             inner = source[i+1:end]
+            if _contains_unescaped(inner, "("):
+                return Unsupported("osregex-nested-group", source)
             if len(_split(inner)) > 1:
                 return Unsupported("osregex-grouped-alternation", source)
             items.append(_parse_osregex(inner))
@@ -302,7 +322,13 @@ def _parse_class(body: str) -> Node:
             chars.update(map(chr, range(ord(body[i]), ord(body[i+2])+1)))
             i += 3
         elif body[i] == "\\" and i+1 < len(body):
-            chars.update(classes.get(body[i+1], frozenset(body[i+1])))
+            escaped = body[i+1]
+            if escaped in classes:
+                chars.update(classes[escaped])
+            elif escaped.isalnum():
+                return Unsupported("pcre2-class-escape", body)
+            else:
+                chars.add(escaped)
             i += 2
         else:
             chars.add(body[i])
@@ -319,16 +345,19 @@ def _parse_pcre2(source: str) -> Node:
     branches = _split(source)
     if len(branches) > 1:
         return Choice(tuple(_parse_pcre2(x) for x in branches))
-    # PCRE2's Unicode-aware shorthand classes contain many more characters
-    # than the legacy Wazuh classes. Keep them opaque rather than claiming an
-    # unsafe conversion to OS_Regex (for example, PCRE2 ``\d`` also matches
-    # Arabic-Indic digits).
-    mapping = {
-        name: Unsupported(f"pcre2-unicode-{name}", f"\\{name}")
-        for name in "dDsSwW"
+
+    mapping: dict[str, Node] = {
+        "d": CharSet(_DIGITS),
+        "D": CharSet(_DIGITS, True),
+        "w": CharSet(_ASCII_WORD),
+        "W": CharSet(_ASCII_WORD, True),
+        "s": CharSet(_PCRE_SPACE),
+        "S": CharSet(_PCRE_SPACE, True),
+        "t": Literal("\t"),
+        "r": Literal("\r"),
+        "n": Literal("\n"),
+        "f": Literal("\f"),
     }
-    mapping.update({"t": Literal("\t"), "r": Literal("\r"),
-                    "n": Literal("\n"), "f": Literal("\f")})
     items: list[Node] = []
     literal: list[str] = []
     i = 0
@@ -337,6 +366,7 @@ def _parse_pcre2(source: str) -> Node:
         if literal:
             items.append(Literal("".join(literal)))
             literal.clear()
+
     while i < len(source):
         ch = source[i]
         if ch == "^" and i == 0:
@@ -351,7 +381,13 @@ def _parse_pcre2(source: str) -> Node:
             flush()
             if i+1 >= len(source):
                 raise RegexSyntaxError("trailing backslash")
-            node = mapping.get(source[i+1], Literal(source[i+1]))
+            escaped = source[i+1]
+            if escaped in mapping:
+                node = mapping[escaped]
+            elif escaped.isalnum():
+                return Unsupported("pcre2-escape", source)
+            else:
+                node = Literal(escaped)
             i += 2
             node, i = _quant(node, source, i)
             items.append(node)
@@ -403,21 +439,13 @@ def detect_engine(source: str) -> Engine | None:
     if not isinstance(source, str):
         raise TypeError("pattern must be a string")
 
-    # This is intentionally the first syntax check. A non-empty pattern with
-    # no character that is special to any of the three engines is a shared
-    # literal, so attributing it to one particular engine would be misleading.
     special_characters = frozenset(r"!\.^$|?*+()[]{}")
     if source and not any(character in special_characters for character in source):
         return None
 
-    # A leading bang is the OS_Match negation operator. In the other engines
-    # it is merely a literal, making this the only strong SRegex signal.
     if source.startswith("!"):
         return Engine.SREGEX
 
-    # OS_Regex's punctuation class and escaped-dot wildcard are characteristic
-    # Wazuh spellings. PCRE2 gives ``\.`` the opposite (literal-dot) meaning,
-    # so recognizing it is particularly important when producing alternatives.
     escaped = False
     for character in source:
         if escaped:
@@ -511,11 +539,11 @@ def fingerprint(pattern: Pattern | str, engine: Engine | str | None = None) -> s
     return hashlib.sha256(semantic_key(canonicalize(_coerce(pattern, engine).ast)).encode()).hexdigest()
 
 
-def _unsupported(node: Node) -> bool: return any(isinstance(x, Unsupported) for x in walk(node))
+def _unsupported(node: Node) -> bool:
+    return any(isinstance(x, Unsupported) for x in walk(node))
 
 
 def _has_case_sensitive_literal(node: Node) -> bool:
-    """Return whether ASCII case folding can change this expression's language."""
     return any(
         isinstance(value, Literal)
         and any(character.isascii() and character.isalpha()
@@ -525,7 +553,6 @@ def _has_case_sensitive_literal(node: Node) -> bool:
 
 
 def _case_semantics_match(left: Pattern, right: Pattern, node: Node) -> bool:
-    """Check the one case-sensitivity difference represented by this AST."""
     one_is_pcre2 = (left.engine == Engine.PCRE2) != (right.engine == Engine.PCRE2)
     return not (one_is_pcre2 and _has_case_sensitive_literal(node))
 
@@ -547,24 +574,29 @@ def compare(left, left_engine=None, right=None, right_engine=None) -> Comparison
     return ComparisonResult(relation, lp, rp, "canonical ASTs are identical" if relation == Relation.EQUIVALENT else "no safe proof")
 
 
-def equivalent(*args, **kwargs) -> bool: return compare(*args, **kwargs).relation == Relation.EQUIVALENT
+def equivalent(*args, **kwargs) -> bool:
+    return compare(*args, **kwargs).relation == Relation.EQUIVALENT
 
 
-def _escape_pcre(value: str) -> str: return re.sub(r'([\\.^$|?*+(){}\[\]])', r'\\\1', value)
+def _escape_pcre(value: str) -> str:
+    return re.sub(r'([\\.^$|?*+(){}\[\]])', r'\\\1', value)
 
 
-def _class_char(ch: str) -> str: return {"\t": r"\t", "\r": r"\r", "\n": r"\n", "\f": r"\f"}.get(ch, "\\"+ch if ch in r"\]-^" else ch)
+def _class_char(ch: str) -> str:
+    return {"\t": r"\t", "\r": r"\r", "\n": r"\n", "\v": r"\x0b", "\f": r"\f"}.get(
+        ch, "\\"+ch if ch in r"\]-^" else ch
+    )
 
 
 def _emit_pcre(node: Node) -> str:
     if isinstance(node, Literal):
         return _escape_pcre(node.value)
     if isinstance(node, CharSet):
-        # Explicit classes preserve OS_Regex's ASCII-only definitions under
-        # the Unicode-aware PCRE2 binding. Shorthand classes would broaden the
-        # language and make the displayed "equivalent" pattern incorrect.
         shortcuts = {(_DIGITS, False): r"[0-9]"}
-        return shortcuts.get((node.chars, node.negated), "["+("^" if node.negated else "")+"".join(map(_class_char, sorted(node.chars)))+"]")
+        return shortcuts.get(
+            (node.chars, node.negated),
+            "["+("^" if node.negated else "")+"".join(map(_class_char, sorted(node.chars)))+"]",
+        )
     if isinstance(node, AnyChar):
         return "." if node.except_newline else r"(?s:.)"
     if isinstance(node, Anchor):
@@ -586,7 +618,12 @@ def _emit_os(node: Node) -> str:
         if any(x in node.value for x in "^*+"):
             raise ValueError("OS_Regex cannot represent literal ^, * or + exactly")
         return "".join(("\\" if x in "$()\\|<" else "")+x for x in node.value)
-    classes: dict[tuple[frozenset[str], bool], str] = {(_WORD_OS, False): r"\w", (_DIGITS, False): r"\d", (_SPACE, False): r"\s", (_TAB, False): r"\t", (_PUNCT_OS, False): r"\p", (_WORD_OS, True): r"\W", (_DIGITS, True): r"\D", (_SPACE, True): r"\S"}
+    classes: dict[tuple[frozenset[str], bool], str] = {
+        (_WORD_OS, False): r"\w", (_DIGITS, False): r"\d",
+        (_SPACE, False): r"\s", (_TAB, False): r"\t",
+        (_PUNCT_OS, False): r"\p", (_WORD_OS, True): r"\W",
+        (_DIGITS, True): r"\D", (_SPACE, True): r"\S",
+    }
     if isinstance(node, CharSet) and (node.chars, node.negated) in classes:
         return classes[(node.chars, node.negated)]
     if isinstance(node, AnyChar) and not node.except_newline:
