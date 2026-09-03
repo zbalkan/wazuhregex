@@ -8,14 +8,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-if __package__:
-    from .compare import Engine, RegexComparer
-    from .highlighter import Highlighter
-    from .wazuh_regex_lib import WazuhRegex
-else:
-    from compare import Engine, RegexComparer
-    from highlighter import Highlighter
-    from wazuh_regex_lib import WazuhRegex
+from .compare import Engine, RegexComparer
+from .highlighter import Highlighter
+from .wazuh_regex_lib import WazuhRegex
 
 
 def _remove_line_delimiter(line: str) -> str:
@@ -94,7 +89,7 @@ def _pattern_header(pattern: str) -> Table:
     return table
 
 
-def main() -> None:
+def _run() -> None:
     console = Console()
 
     if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
@@ -177,9 +172,18 @@ def main() -> None:
         console.print()  # Blank line between tests
 
 
-if __name__ == "__main__":
+def main() -> int:
+    """Run the CLI, translating Ctrl+C into a clean process exit."""
     try:
-        main()
+        _run()
     except KeyboardInterrupt:
-        print('bye!👋')
-        pass
+        # Catch this in the console entry point rather than installing a signal
+        # handler. This is portable and also works in pip/pipx launchers, which
+        # call ``main`` directly instead of executing this module's guard.
+        print("bye!👋")
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

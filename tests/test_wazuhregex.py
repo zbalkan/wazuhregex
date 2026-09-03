@@ -1,18 +1,27 @@
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from rich.console import Console
 from rich.text import Text
 
-from src.compare import Engine, RegexComparer
-from src.highlighter import Highlighter
-from src.wazuh_regex_lib import WazuhRegex
-from src.wazuhregex import (
+from wazuhregex.compare import Engine, RegexComparer
+from wazuhregex.highlighter import Highlighter
+from wazuhregex.wazuh_regex_lib import WazuhRegex
+from wazuhregex.cli import (
     _format_spans,
     _highlight_matches,
     _pattern_header,
     _remove_line_delimiter,
+    main,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CLI_ENV = os.environ.copy()
+CLI_ENV["PYTHONPATH"] = os.pathsep.join(
+    filter(None, (str(PROJECT_ROOT / "src"), CLI_ENV.get("PYTHONPATH")))
 )
 
 # --- Data from C unit tests ---
@@ -495,11 +504,12 @@ def test_cli_match_formatters_include_every_match() -> None:
 
 def test_cli_module_preserves_empty_input() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex", "^$"],
+        [sys.executable, "-m", "wazuhregex", "^$"],
         input="\n",
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 0
@@ -603,11 +613,12 @@ def test_pattern_header_places_conversion_warning_in_remarks_column() -> None:
 
 def test_cli_preserves_input_whitespace() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex", "^ record $"],
+        [sys.executable, "-m", "wazuhregex", "^ record $"],
         input=" record \n",
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 0
@@ -633,11 +644,12 @@ def test_remove_line_delimiter_preserves_record_content(
 
 def test_cli_renders_captured_rich_markup_as_literal_text() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex", r"(\S+)"],
+        [sys.executable, "-m", "wazuhregex", r"(\S+)"],
         input="[bold]event[/bold]\n",
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 0
@@ -647,10 +659,11 @@ def test_cli_renders_captured_rich_markup_as_literal_text() -> None:
 @pytest.mark.parametrize("help_option", ["-h", "--help"])
 def test_cli_help_does_not_treat_option_as_a_pattern(help_option: str) -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex", help_option],
+        [sys.executable, "-m", "wazuhregex", help_option],
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 0
@@ -660,10 +673,11 @@ def test_cli_help_does_not_treat_option_as_a_pattern(help_option: str) -> None:
 
 def test_cli_requires_exactly_one_pattern() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex"],
+        [sys.executable, "-m", "wazuhregex"],
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 2
@@ -687,14 +701,39 @@ def test_validation_errors_reports_invalid_pcre2() -> None:
 
 def test_cli_distinguishes_invalid_pattern_from_non_match() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "src.wazuhregex", "a+"],
+        [sys.executable, "-m", "wazuhregex", "a+"],
         input="bbb\n",
         text=True,
         capture_output=True,
         check=False,
+        env=CLI_ENV,
     )
 
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Modifier on bare character" in result.stdout
     assert "Invalid" in result.stdout
+
+
+def test_public_package_api() -> None:
+    """Consumers can import the supported library classes from the package."""
+    from wazuhregex import Engine as PublicEngine
+    from wazuhregex import RegexComparer as PublicRegexComparer
+    from wazuhregex import WazuhRegex as PublicWazuhRegex
+
+    assert PublicEngine is Engine
+    assert PublicRegexComparer is RegexComparer
+    assert PublicWazuhRegex is WazuhRegex
+
+
+def test_cli_handles_keyboard_interrupt(monkeypatch, capsys) -> None:
+    """The installed console entry point exits cleanly when stdin is interrupted."""
+    class InterruptedInput:
+        def __iter__(self):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "argv", ["wazuhregex", "test"])
+    monkeypatch.setattr(sys, "stdin", InterruptedInput())
+
+    assert main() == 130
+    assert "bye!👋" in capsys.readouterr().out

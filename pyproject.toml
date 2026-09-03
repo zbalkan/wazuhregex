@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wazuhregex"
+version = "0.1.0"
+description = "Test expressions with the regular expression engines supported by Wazuh"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Zafer Balkan", email = "zafer@zaferbalkan.com" },
+]
+keywords = ["wazuh", "regex", "pcre2", "security", "ossec"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = [
+  "pcre2>=0.6,<0.7",
+  "rich>=13,<16",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+build = ["build>=1.2", "twine>=5"]
+
+[project.scripts]
+wazuhregex = "wazuhregex.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/zbalkan/wazuh-regex"
+Repository = "https://github.com/zbalkan/wazuh-regex"
+Issues = "https://github.com/zbalkan/wazuh-regex/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["src"]
+testpaths = ["tests"]

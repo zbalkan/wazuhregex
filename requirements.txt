@@ -1,8 +1,2 @@
-colorama==0.4.6
-iniconfig==2.3.0
-packaging==26.2
-pcre2==0.6.0
-pluggy==1.6.0
-Pygments==2.20.0
-pytest==9.0.3
-rich==15.0.0
+# Development convenience install. Runtime dependencies are declared in pyproject.toml.
+-e .[test]
