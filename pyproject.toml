@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wazuhregex"
-version = "0.1.0"
+version = "0.2.0"
 description = "Test expressions with the regular expression engines supported by Wazuh"
 readme = "README.md"
 license = "GPL-2.0-only"
