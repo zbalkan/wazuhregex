@@ -27,6 +27,7 @@ This project gives you a local, repeatable way to check behavior before shipping
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.
 - Pattern normalization that accepts fully quoted patterns and rejects unbalanced quotes.
 - Lossless stdin handling, including blank records and leading or trailing whitespace.
+- Per-engine validation that distinguishes invalid syntax from a valid non-match.
 
 ## Requirements
 

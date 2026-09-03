@@ -112,6 +112,28 @@ class WazuhRegex:
         """Returns substrings captured by the last successful os_regex or pcre2_regex call."""
         return self._last_substrings
 
+    def validation_errors(self) -> dict[str, str]:
+        """Return compile errors for engines that compile regular expressions.
+
+        Match methods intentionally retain their boolean API and therefore
+        report an invalid expression as a non-match. Callers that need to tell
+        those cases apart (such as the CLI) can use this method before matching.
+        OS_Match is not included because its syntax is parsed as literal match
+        alternatives rather than compiled as a regular expression.
+        """
+        errors: dict[str, str] = {}
+        try:
+            self._os_regex_compile()
+        except ValueError as error:
+            errors["OS_Regex"] = str(error)
+
+        try:
+            pcre2.compile(self._raw_pattern, jit=True)
+        except Exception as error:
+            errors["PCRE2"] = f"Invalid for PCRE2: {error}"
+
+        return errors
+
     def _os_match_compile(self) -> list[tuple[str, str, bool]]:
         os_match_compiled: list[tuple[str, str, bool]] = []
         pattern = self._raw_pattern

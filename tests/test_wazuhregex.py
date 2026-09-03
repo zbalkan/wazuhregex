@@ -286,3 +286,35 @@ def test_cli_module_preserves_empty_input() -> None:
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Match" in result.stdout
+
+
+def test_validation_errors_are_reported_per_engine() -> None:
+    errors = WazuhRegex("a+").validation_errors()
+
+    assert "OS_Regex" in errors
+    assert "Modifier on bare character" in errors["OS_Regex"]
+    assert "PCRE2" not in errors
+
+
+def test_validation_errors_reports_invalid_pcre2() -> None:
+    errors = WazuhRegex("(").validation_errors()
+
+    assert "OS_Regex" in errors
+    assert "PCRE2" in errors
+
+
+def test_cli_distinguishes_invalid_pattern_from_non_match() -> None:
+    environment = {**os.environ, "NO_COLOR": "1"}
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex", "a+"],
+        input="bbb\n",
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+
+    assert result.returncode == 0
+    assert "OS_Regex" in result.stdout
+    assert "Modifier on bare character" in result.stdout
+    assert "Invalid" in result.stdout

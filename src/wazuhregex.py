@@ -35,6 +35,13 @@ def main() -> None:
         console.print(f"[red]Invalid pattern:[/red] {escape(str(error))}")
         sys.exit(2)
     console.print("[green]✓[/green] Pattern loaded\n", style="dim")
+    validation_errors = wazuh_tool.validation_errors()
+    for engine, error in validation_errors.items():
+        console.print(
+            f"[yellow]⚠ {engine}:[/yellow] {escape(error)}"
+        )
+    if validation_errors:
+        console.print()
 
     for line in sys.stdin:
         # Remove only the stream delimiter. Leading/trailing spaces and empty
@@ -51,7 +58,9 @@ def main() -> None:
 
         # Test OS_Regex
         is_match, spans = wazuh_tool.os_regex(text)
-        if is_match:
+        if "OS_Regex" in validation_errors:
+            table.add_row("OS_Regex", "⚠ Invalid", "—", "—")
+        elif is_match:
             substrings = wazuh_tool.get_substrings()
             span_str = str(spans[0]) if spans else "—"
             groups_str = ", ".join(
@@ -70,7 +79,9 @@ def main() -> None:
 
         # Test PCRE2
         is_match, spans = wazuh_tool.pcre2_regex(text)
-        if is_match:
+        if "PCRE2" in validation_errors:
+            table.add_row("PCRE2", "⚠ Invalid", "—", "—")
+        elif is_match:
             substrings = wazuh_tool.get_substrings()
             span_str = str(spans[0]) if spans else "—"
             groups_str = ", ".join(
