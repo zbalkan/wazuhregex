@@ -3,11 +3,17 @@ import sys
 
 import pytest
 from rich.console import Console
+from rich.text import Text
 
 from src.compare import Engine, RegexComparer
 from src.highlighter import Highlighter
 from src.wazuh_regex_lib import WazuhRegex
-from src.wazuhregex import _pattern_header, _remove_line_delimiter
+from src.wazuhregex import (
+    _format_spans,
+    _highlight_matches,
+    _pattern_header,
+    _remove_line_delimiter,
+)
 
 # --- Data from C unit tests ---
 
@@ -264,7 +270,10 @@ def test_osregex_documented_operators(
     assert WazuhRegex(pattern).os_regex(non_matching_text)[0] is False
 
 
-@pytest.mark.parametrize("pattern", [r"a+", r"a*", r"(foo|bar)"])
+@pytest.mark.parametrize(
+    "pattern",
+    [r"a+", r"a*", r"(foo|bar)", r"\\d+", r"\q+"],
+)
 def test_osregex_rejects_unsupported_operator_placement(pattern: str) -> None:
     tool = WazuhRegex(pattern)
 
@@ -474,6 +483,16 @@ def test_highlighter_rejects_invalid_span() -> None:
         Highlighter().apply("text", [(0, 5)])
 
 
+def test_cli_match_formatters_include_every_match() -> None:
+    spans = [(0, 3), (8, 11)]
+
+    assert _format_spans(spans) == "(0, 3), (8, 11)"
+    highlighted = _highlight_matches("cat and cat", spans)
+    assert isinstance(highlighted, Text)
+    assert highlighted.plain == "cat and cat"
+    assert [(span.start, span.end) for span in highlighted.spans] == spans
+
+
 def test_cli_module_preserves_empty_input() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "src.wazuhregex", "^$"],
@@ -499,6 +518,17 @@ def test_regex_comparer_converts_literal_to_all_engines() -> None:
         Engine.OSREGEX: "^event$",
         Engine.SREGEX: "^event$",
     }
+
+
+@pytest.mark.parametrize("pattern", [r"a{2,3}", r"a{2,}"])
+def test_regex_comparer_parses_standard_bounded_quantifiers(pattern: str) -> None:
+    comparer = RegexComparer()
+    source = comparer.parse(pattern, Engine.PCRE2)
+
+    converted = comparer.convert(source, target=Engine.PCRE2)
+
+    assert converted.supported is True
+    assert converted.pattern == pattern
 
 
 def test_pattern_header_shows_all_safe_alternatives() -> None:

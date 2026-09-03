@@ -273,10 +273,10 @@ def _quant(node: Node, source: str, i: int) -> tuple[Node, int]:
         raise RegexSyntaxError("unterminated bounded quantifier")
     spec = source[i+1:end]
     try:
-        if ", " not in spec:
+        if "," not in spec:
             minimum = maximum = int(spec)
         else:
-            left, right = spec.split(", ", 1)
+            left, right = spec.split(",", 1)
             minimum = int(left)
             maximum: int | None = int(right) if right else None
     except ValueError:
@@ -541,7 +541,7 @@ def _emit_pcre(node: Node) -> str:
     if isinstance(node, Repeat):
         base = _emit_pcre(node.item)
         base = base if isinstance(node.item, (CharSet, AnyChar)) or isinstance(node.item, Literal) and len(node.item.value) == 1 else f"(?:{base})"
-        q = "*" if (node.minimum, node.maximum) == (0, None) else "+" if (node.minimum, node.maximum) == (1, None) else "?" if (node.minimum, node.maximum) == (0, 1) else "{"+str(node.minimum)+("" if node.maximum == node.minimum else ", "+("" if node.maximum is None else str(node.maximum)))+"}"
+        q = "*" if (node.minimum, node.maximum) == (0, None) else "+" if (node.minimum, node.maximum) == (1, None) else "?" if (node.minimum, node.maximum) == (0, 1) else "{"+str(node.minimum)+("" if node.maximum == node.minimum else ","+("" if node.maximum is None else str(node.maximum)))+"}"
         return base+q
     raise ValueError("unsupported AST cannot be emitted exactly")
 

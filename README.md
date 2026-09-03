@@ -29,7 +29,7 @@ This project gives you a local, repeatable way to check behavior before shipping
   to default to PCRE2. Conversion warnings appear in a separate `Remarks`
   column so unavailable equivalent-pattern cells remain empty.
 - Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
-- Match spans for each engine.
+- Highlighted matches and every match span for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.
 - Literal handling for OS_Regex characters that are metacharacters only in PCRE2.
 - Lossless stdin handling, including blank records and leading or trailing whitespace.

@@ -12,8 +12,6 @@ class WazuhRegex:
     engine to test a pattern against a specific Wazuh regex flavor.
     """
 
-    _INVALID_MODIFIER_USE: Final[pcre2.Pattern] = pcre2.compile(r'(?<!\\[wdsptWDSP\.])[*+]')
-
     _TRANSLATIONS: Final[dict[str, str]] = {
         r'\\': r'\\',
         r'\D': r'[^0-9]',
@@ -52,10 +50,6 @@ class WazuhRegex:
     def _os_regex_compile(self) -> pcre2.Pattern:
         if self._has_group_alternation(self._raw_pattern):
             raise ValueError("Invalid for OS_Regex: Alternation '|' in group.")
-        if self._INVALID_MODIFIER_USE.search(self._raw_pattern):
-            raise ValueError(
-                "Invalid for OS_Regex: Modifier on bare character.")
-
         # Translate the original pattern in one pass. Sequential ``replace``
         # calls also rewrite text introduced by an earlier rule (notably the
         # escapes inside ``\p``), producing a subtly different expression.
@@ -66,12 +60,20 @@ class WazuhRegex:
             replacement = self._TRANSLATIONS.get(token)
             if replacement is None:
                 character = self._raw_pattern[index]
+                if character in "*+":
+                    raise ValueError(
+                        "Invalid for OS_Regex: Modifier on bare character."
+                    )
                 # A backslash quotes an otherwise literal OS_Regex character.
                 # Do not pass unknown escapes through to PCRE2: doing so would
                 # accidentally enable unsupported constructs such as ``\b``,
                 # ``\x41``, and backreferences.
                 if character == '\\' and len(token) == 2:
                     quoted = token[1]
+                    if quoted in "*+":
+                        raise ValueError(
+                            "Invalid for OS_Regex: Modifier on bare character."
+                        )
                     if quoted in self._PCRE_METACHARACTERS:
                         translation_parts.append('\\')
                     translation_parts.append(quoted)
@@ -84,6 +86,9 @@ class WazuhRegex:
             else:
                 translation_parts.append(replacement)
                 index += 2
+                if index < len(self._raw_pattern) and self._raw_pattern[index] in "*+":
+                    translation_parts.append(self._raw_pattern[index])
+                    index += 1
         translation = ''.join(translation_parts)
         try:
             return pcre2.compile(translation, flags=pcre2.IGNORECASE, jit=True)

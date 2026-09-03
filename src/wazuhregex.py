@@ -6,12 +6,15 @@ from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 if __package__:
     from .compare import Engine, RegexComparer
+    from .highlighter import Highlighter
     from .wazuh_regex_lib import WazuhRegex
 else:
     from compare import Engine, RegexComparer
+    from highlighter import Highlighter
     from wazuh_regex_lib import WazuhRegex
 
 
@@ -27,6 +30,27 @@ def _remove_line_delimiter(line: str) -> str:
 def _format_substrings(substrings: list[str]) -> str:
     """Format captured values as literal Rich markup-safe text."""
     return ", ".join(f'"{escape(value)}"' for value in substrings)
+
+
+def _format_spans(spans: list[tuple[int, int]]) -> str:
+    """Format every match span instead of silently dropping later matches."""
+    return ", ".join(map(str, spans)) if spans else "—"
+
+
+def _highlight_matches(text: str, spans: list[tuple[int, int]]) -> Text | str:
+    """Return literal text with all non-empty match spans highlighted."""
+    if not spans:
+        return "—"
+    return Text.from_ansi(Highlighter().apply(text, spans))
+
+
+def _format_match(text: str, spans: list[tuple[int, int]]) -> Text | str:
+    """Show highlighted matches and their exact offsets in one compact cell."""
+    highlighted = _highlight_matches(text, spans)
+    if isinstance(highlighted, str):
+        return highlighted
+    highlighted.append(f"\n{_format_spans(spans)}", style="yellow")
+    return highlighted
 
 
 def _pattern_header(pattern: str) -> Table:
@@ -105,9 +129,9 @@ def main() -> None:
         # Create results table
         table = Table(title=f"Testing: {escape(text)}",
                       show_header=True, header_style="bold")
-        table.add_column("Engine", style="cyan", width=15)
-        table.add_column("Result", justify="center", width=15)
-        table.add_column("Match Span", style="yellow")
+        table.add_column("Engine", style="cyan")
+        table.add_column("Result", justify="center")
+        table.add_column("Match / Span")
         table.add_column("Captured Groups", style="green")
 
         # Test OS_Regex
@@ -116,17 +140,17 @@ def main() -> None:
             table.add_row("OS_Regex", "⚠ Invalid", "—", "—")
         elif is_match:
             substrings = wazuh_tool.get_substrings()
-            span_str = str(spans[0]) if spans else "—"
             groups_str = _format_substrings(substrings) if substrings else "—"
-            table.add_row("OS_Regex", "✅ Match", span_str, groups_str)
+            table.add_row("OS_Regex", "✅ Match",
+                          _format_match(text, spans), groups_str)
         else:
             table.add_row("OS_Regex", "❌ No Match", "—", "—")
 
         # Test OS_Match
         is_match, spans = wazuh_tool.os_match(text)
-        span_str = str(spans[0]) if spans else "—"
         if is_match:
-            table.add_row("OS_Match", "✅ Match", span_str, "N/A")
+            table.add_row("OS_Match", "✅ Match",
+                          _format_match(text, spans), "N/A")
         else:
             table.add_row("OS_Match", "❌ No Match", "—", "N/A")
 
@@ -136,9 +160,9 @@ def main() -> None:
             table.add_row("PCRE2", "⚠ Invalid", "—", "—")
         elif is_match:
             substrings = wazuh_tool.get_substrings()
-            span_str = str(spans[0]) if spans else "—"
             groups_str = _format_substrings(substrings) if substrings else "—"
-            table.add_row("PCRE2", "✅ Match", span_str, groups_str)
+            table.add_row("PCRE2", "✅ Match",
+                          _format_match(text, spans), groups_str)
         else:
             table.add_row("PCRE2", "❌ No Match", "—", "—")
 
