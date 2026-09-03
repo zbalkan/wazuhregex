@@ -71,7 +71,7 @@ def main() -> None:
         table = Table(title=f"Testing: {escape(text)}",
                       show_header=True, header_style="bold")
         table.add_column("Engine", style="cyan", width=15)
-        table.add_column("Result", justify="center", width=10)
+        table.add_column("Result", justify="center", width=15)
         table.add_column("Match Span", style="yellow")
         table.add_column("Captured Groups", style="green")
 
@@ -115,5 +115,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print('bye!')
+        print('bye!👋')
         pass
