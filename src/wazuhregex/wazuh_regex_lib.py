@@ -24,8 +24,10 @@ class WazuhRegex:
         # Keep this character class self-contained. Running later string
         # replacements over it can corrupt its escaped characters.
         r'\p': r'''[\-()*+,.\\:;<=>?\[\]!"'#$%&|{}]''',
-        # OS_Regex uses an escaped dot for its any-character operator.
-        r'\.': r'.',
+        # OS_Regex uses an escaped dot for its any-character operator. Wazuh's
+        # character map accepts every byte, including newline, so use a scoped
+        # DOTALL group instead of PCRE2's default dot behaviour.
+        r'\.': r'(?s:.)',
     }
 
     # These characters have no special meaning in OS_Regex, but do have one
@@ -128,7 +130,10 @@ class WazuhRegex:
         """Emulates the OSRegex_Execute engine."""
         self._last_substrings = []
         self._validate_text(text)
-        if self._raw_pattern in ('$', '^$', '^'):
+        # Wazuh treats an end-only anchor as matching only the empty input. A
+        # lone start anchor is different: it succeeds at offset zero even when
+        # the input is non-empty, so let the normal compiled path handle '^'.
+        if self._raw_pattern in ('$', '^$'):
             return (True, [(0, 0)]) if text == "" else (False, [])
 
         try:
