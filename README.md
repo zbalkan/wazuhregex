@@ -16,7 +16,7 @@ The project includes:
 - `src/wazuhregex/`: importable Python package and command-line implementation.
 - `wazuhregex`: CLI tester with side-by-side engine results.
 - `tests/test_wazuhregex.py`: pytest suite that mirrors Wazuh C test coverage.
-- `tests/test_regressions_020.py`: additional edge-case and regression coverage, including explicit expected failures for known alpha compatibility gaps.
+- `tests/test_engine_edge_cases.py`: additional engine boundary and edge-case coverage, including explicit expected failures for known alpha compatibility gaps.
 
 ## Why this exists
 
@@ -130,7 +130,7 @@ Run only the main compatibility suite:
 python -m pytest tests/test_wazuhregex.py
 ```
 
-The additional `tests/test_regressions_020.py` suite exercises boundary cases that are easy to change accidentally. Known emulator differences are represented as non-strict `xfail` tests. This keeps a compatibility gap visible without making an alpha release claim bit-for-bit equivalence that it does not yet provide.
+The additional `tests/test_engine_edge_cases.py` suite exercises boundary cases that are easy to change accidentally. Known emulator differences are represented as non-strict `xfail` tests. This keeps a compatibility gap visible without making an alpha release claim bit-for-bit equivalence that it does not yet provide.
 
 ## Notes on behavior differences
 
@@ -138,11 +138,10 @@ The additional `tests/test_regressions_020.py` suite exercises boundary cases th
 
 - `OS_Regex` syntax is translated to PCRE2 before execution. Wazuh's OS_Regex engine deliberately has limited backtracking, whereas the PCRE2 backend can reconsider earlier matches. Expressions that combine several `*` or `+` classes can therefore produce a different result. Wazuh documents `\p*\d*\s*\w*:` as an example where its engine does not backtrack after `\p*` consumes the colon.
 - Wazuh's legacy OS_Regex and OS_Match implementations operate on byte strings. The Python API operates on Unicode strings. ASCII case folding and the documented ASCII character classes are emulated, but offsets and captured substrings involving non-ASCII input are Python character offsets and may not correspond to byte offsets returned by native Wazuh code.
-- A bare `.` in OS_Regex is a literal dot, while `\.` is the OS_Regex wildcard. PCRE2 uses the opposite convention for the bare dot. The tool preserves that engine difference instead of normalizing the pattern silently.
-- Some OS_Regex validation edge cases are not yet identical to Wazuh. In the current alpha implementation, some unsupported backslash escapes can be treated as quoted literals, nested groups can reach the PCRE2 backend, and the punctuation-class translation has edge cases. Regression tests keep these known gaps visible until the emulation is tightened.
-- Wazuh documents the OS_Regex `\.` wildcard as matching anything. The current PCRE2 translation inherits PCRE2's default newline handling, so newline is a known edge case.
+- A bare `.` in OS_Regex is a literal dot, while `\.` is the OS_Regex wildcard. PCRE2 uses the opposite convention for the bare dot. The tool preserves that engine difference instead of normalizing the pattern silently. The OS_Regex wildcard translation is forced into scoped DOTALL mode so it also matches newline, as Wazuh's character map does.
+- Some OS_Regex validation edge cases are not yet identical to Wazuh. In the current alpha implementation, some unsupported backslash escapes can be treated as quoted literals, nested groups can reach the PCRE2 backend, and the punctuation-class translation has edge cases. Edge-case tests keep these known gaps visible until the emulation is tightened.
 - PCRE2 in Wazuh is compiled as an 8-bit expression without Unicode-property options by default. The Python `pcre2` binding operates on Python `str` values and enables Unicode processing internally. Shorthand classes such as `\d`, `\w`, or `\s` can therefore differ for non-ASCII input even when ordinary ASCII cases agree.
-- The current `pcre2==0.6.0` Python binding also differs on at least one documented PCRE2 spelling: Wazuh documents both `\xhh` and `\x{hh..}`, but the binding accepts `\x41` while the braced `\x{41}` form is currently retained as an expected compatibility failure in the regression suite.
+- The current `pcre2==0.6.0` Python binding also differs on at least one documented PCRE2 spelling: Wazuh documents both `\xhh` and `\x{hh..}`, but the binding accepts `\x41` while the braced `\x{41}` form is currently retained as an expected compatibility failure in the edge-case suite.
 - `OS_Match` is implemented as substring/anchor matching and does not return capture groups. Match spans are a convenience provided by this project, not part of Wazuh's OS_Match API. A successful negated expression has no positive matching substring and therefore returns an empty span list.
 - Equivalent-pattern suggestions are intentionally conservative. A missing conversion or an `unknown` comparison means that the tool could not prove a safe equivalence; it does not prove that two expressions behave differently for every possible input.
 - The CLI skips blank and whitespace-only stdin records. Leading and trailing whitespace on non-empty records is preserved.
