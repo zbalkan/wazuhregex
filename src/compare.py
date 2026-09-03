@@ -381,6 +381,44 @@ def _parse_pcre2(source: str) -> Node:
 _PARSERS = {Engine.PCRE2: _parse_pcre2, Engine.OSREGEX: _parse_osregex, Engine.SREGEX: _parse_sregex}
 
 
+def detect_engine(source: str) -> Engine:
+    """Guess the engine whose spelling the user supplied.
+
+    There is deliberately no attempt to claim certainty here: most literal
+    expressions, anchors, and several character classes are valid in more
+    than one Wazuh engine. Prefer the literal-oriented SRegex engine for a
+    non-empty literal and PCRE2 for remaining ambiguous regex syntax.
+    """
+    if not isinstance(source, str):
+        raise TypeError("pattern must be a string")
+
+    # A leading bang is the OS_Match negation operator. In the other engines
+    # it is merely a literal, making this the only strong SRegex signal.
+    if source.startswith("!"):
+        return Engine.SREGEX
+
+    # OS_Regex's punctuation class and escaped-dot wildcard are characteristic
+    # Wazuh spellings. PCRE2 gives ``\.`` the opposite (literal-dot) meaning,
+    # so recognizing it is particularly important when producing alternatives.
+    escaped = False
+    for character in source:
+        if escaped:
+            if character in ("p", "."):
+                return Engine.OSREGEX
+            escaped = False
+        elif character == "\\":
+            escaped = True
+
+    # A pattern with no regex operators is most naturally an OS_Match literal.
+    # Keep the empty pattern on the PCRE2 fallback because it provides no
+    # positive evidence for any engine.
+    regex_syntax = frozenset(r"\.^$*+?{}[]()|")
+    if source and not any(character in regex_syntax for character in source):
+        return Engine.SREGEX
+
+    return Engine.PCRE2
+
+
 def parse(source: str, engine: Engine | str) -> Pattern:
     d = Engine.coerce(engine)
     return Pattern(source, d, _PARSERS[d](source))
@@ -590,6 +628,7 @@ def find_duplicates(patterns: Iterable[Pattern | tuple[str, Engine | str]]) -> t
 class RegexComparer:
     """State-free facade over regex parsing, comparison, and conversion."""
     parse = staticmethod(parse)
+    detect_engine = staticmethod(detect_engine)
     compare = staticmethod(compare)
     equivalent = staticmethod(equivalent)
     fingerprint = staticmethod(fingerprint)

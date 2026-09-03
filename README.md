@@ -22,8 +22,12 @@ This project gives you a local, repeatable way to check behavior before shipping
 ## Features
 
 - Test all 3 engines from one command.
-- Show round-trip-validated OS_Regex, OS_Match, and PCRE2 alternatives in the
-  command header whenever the input can be represented safely.
+- Heuristically detect whether the supplied pattern uses OS_Regex, OS_Match,
+  or PCRE2 syntax, mark that engine with `(orig.)`, and show round-trip-validated
+  alternatives whenever the input can be represented safely. Plain, non-empty
+  literals are treated as OS_Match patterns; ambiguous regex syntax continues
+  to default to PCRE2. Conversion warnings appear in a separate `Remarks`
+  column so unavailable equivalent-pattern cells remain empty.
 - Case-insensitive emulation for `OS_Regex` and `OS_Match` behavior.
 - Match spans for each engine.
 - Captured groups/substring extraction for `OS_Regex` and `PCRE2`.

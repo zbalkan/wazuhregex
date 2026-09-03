@@ -30,11 +30,12 @@ def _format_substrings(substrings: list[str]) -> str:
 
 
 def _pattern_header(pattern: str) -> Table:
-    """Build a header containing safe equivalents of the PCRE2 input."""
+    """Build a header containing safe equivalents of the detected input."""
     comparer = RegexComparer()
-    patterns = {Engine.PCRE2: pattern}
+    original_engine = comparer.detect_engine(pattern)
+    patterns = {original_engine: pattern}
     try:
-        source = comparer.parse(pattern, Engine.PCRE2)
+        source = comparer.parse(pattern, original_engine)
         patterns.update(
             {alternative.engine: alternative.pattern
              for alternative in comparer.alternatives(source)}
@@ -45,8 +46,9 @@ def _pattern_header(pattern: str) -> Table:
 
     table = Table(title="Wazuh Regex Tester", show_header=True,
                   header_style="bold")
-    table.add_column("engine", style="cyan", width=15)
+    table.add_column("engine", style="cyan", width=20)
     table.add_column("Equivalent pattern")
+    table.add_column("Remarks")
     for engine, label in (
         (Engine.OSREGEX, "OS_Regex"),
         (Engine.SREGEX, "OS_Match"),
@@ -54,8 +56,9 @@ def _pattern_header(pattern: str) -> Table:
     ):
         alternative = patterns.get(engine)
         table.add_row(
-            label,
-            escape(alternative) if alternative is not None else "[dim]Not safely convertible[/dim]",
+            f"{label} (orig.)" if engine == original_engine else label,
+            escape(alternative) if alternative is not None else "",
+            "" if alternative is not None else "[dim]Not safely convertible[/dim]",
         )
     return table
 
@@ -75,7 +78,7 @@ def main() -> None:
 
     pattern = sys.argv[1]
 
-    # Treat the command-line expression as PCRE2 when deriving equivalent
+    # Detect the command-line expression heuristically when deriving equivalent
     # spellings. Every conversion is round-trip checked by RegexComparer.
     console.print(Panel(f"[bold cyan]Input pattern:[/bold cyan] {escape(pattern)}"))
     console.print(_pattern_header(pattern))

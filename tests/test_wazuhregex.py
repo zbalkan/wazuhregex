@@ -509,6 +509,54 @@ def test_pattern_header_shows_all_safe_alternatives() -> None:
     assert "OS_Regex" in rendered
     assert "OS_Match" in rendered
     assert "PCRE2" in rendered
+    assert "PCRE2 (orig.)" in rendered
+
+
+@pytest.mark.parametrize(
+    "pattern, expected",
+    [
+        (r"(?<name>\w+)", Engine.PCRE2),
+        (r"^message\p+$", Engine.OSREGEX),
+        (r"^file\.+$", Engine.OSREGEX),
+        ("!debug|trace", Engine.SREGEX),
+        ("literal", Engine.SREGEX),
+        ("^ordinary$", Engine.PCRE2),
+        ("", Engine.PCRE2),
+    ],
+)
+def test_regex_comparer_detects_original_engine_heuristically(
+    pattern: str, expected: Engine
+) -> None:
+    assert RegexComparer().detect_engine(pattern) == expected
+
+
+@pytest.mark.parametrize(
+    "pattern, original_label",
+    [
+        (r"^message\p+$", "OS_Regex (orig.)"),
+        ("!debug|trace", "OS_Match (orig.)"),
+        ("literal", "OS_Match (orig.)"),
+    ],
+)
+def test_pattern_header_marks_detected_original_engine(
+    pattern: str, original_label: str
+) -> None:
+    console = Console(record=True, width=100)
+    console.print(_pattern_header(pattern))
+
+    assert original_label in console.export_text()
+
+
+def test_pattern_header_places_conversion_warning_in_remarks_column() -> None:
+    table = _pattern_header(r"^message\p+$")
+
+    assert [column.header for column in table.columns] == [
+        "engine",
+        "Equivalent pattern",
+        "Remarks",
+    ]
+    assert list(table.columns[1].cells)[1] == ""
+    assert list(table.columns[2].cells)[1] == "[dim]Not safely convertible[/dim]"
 
 
 def test_cli_preserves_input_whitespace() -> None:
