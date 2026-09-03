@@ -270,6 +270,20 @@ def test_osregex_rejects_unsupported_operator_placement(pattern: str) -> None:
     assert "OS_Regex" in tool.validation_errors()
 
 
+def test_osregex_allows_escaped_alternation_inside_group() -> None:
+    tool = WazuhRegex(r"^(left\|right)$")
+
+    assert "OS_Regex" not in tool.validation_errors()
+    assert tool.os_regex("left|right") == (True, [(0, 10)])
+
+
+def test_osregex_rejects_nested_group_alternation() -> None:
+    tool = WazuhRegex(r"(outer(inner|other))")
+
+    assert tool.os_regex("outerinner")[0] is False
+    assert "Alternation '|' in group" in tool.validation_errors()["OS_Regex"]
+
+
 def test_osregex_is_case_insensitive_but_pcre2_is_case_sensitive() -> None:
     tool = WazuhRegex("^error$")
 
@@ -323,6 +337,24 @@ def test_failed_match_clears_captures_from_previous_match() -> None:
 
     assert tool.pcre2_regex("no digits")[0] is False
     assert tool.get_substrings() == []
+
+
+def test_get_substrings_returns_a_copy() -> None:
+    tool = WazuhRegex(r"(\d+)")
+    assert tool.pcre2_regex("42")[0] is True
+
+    returned_substrings = tool.get_substrings()
+    returned_substrings.append("caller mutation")
+
+    assert tool.get_substrings() == ["42"]
+
+
+@pytest.mark.parametrize("method_name", ["os_regex", "os_match", "pcre2_regex"])
+def test_match_methods_reject_non_string_text_consistently(method_name: str) -> None:
+    method = getattr(WazuhRegex("event"), method_name)
+
+    with pytest.raises(TypeError, match="text must be a string"):
+        method(None)
 
 
 def test_pattern_preserves_single_quotes_as_literals() -> None:

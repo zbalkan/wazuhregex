@@ -12,7 +12,6 @@ class WazuhRegex:
     engine to test a pattern against a specific Wazuh regex flavor.
     """
 
-    _INVALID_GROUP_ALTERNATION: Final[pcre2.Pattern] = pcre2.compile(r'\([^)]*\|[^)]*\)')
     _INVALID_MODIFIER_USE: Final[pcre2.Pattern] = pcre2.compile(r'(?<!\\[wdspWDSP\.])[*+]')
 
     _TRANSLATIONS: Final[dict[str, str]] = {
@@ -50,7 +49,7 @@ class WazuhRegex:
         self._last_substrings: list[str] = []
 
     def _os_regex_compile(self) -> pcre2.Pattern:
-        if self._INVALID_GROUP_ALTERNATION.search(self._raw_pattern):
+        if self._has_group_alternation(self._raw_pattern):
             raise ValueError("Invalid for OS_Regex: Alternation '|' in group.")
         if self._INVALID_MODIFIER_USE.search(self._raw_pattern):
             raise ValueError(
@@ -83,12 +82,36 @@ class WazuhRegex:
         translation = ''.join(translation_parts)
         try:
             return pcre2.compile(translation, flags=pcre2.IGNORECASE, jit=True)
-        except Exception as e:
-            raise ValueError(f"Invalid for OS_Regex: {e}")
+        except pcre2.PatternError as error:
+            raise ValueError(f"Invalid for OS_Regex: {error}") from error
+
+    @staticmethod
+    def _has_group_alternation(pattern: str) -> bool:
+        """Return whether an unescaped alternation occurs inside a group."""
+        group_depth = 0
+        escaped = False
+        for character in pattern:
+            if escaped:
+                escaped = False
+            elif character == '\\':
+                escaped = True
+            elif character == '(':
+                group_depth += 1
+            elif character == ')':
+                group_depth = max(0, group_depth - 1)
+            elif character == '|' and group_depth:
+                return True
+        return False
+
+    @staticmethod
+    def _validate_text(text: str) -> None:
+        if not isinstance(text, str):
+            raise TypeError("text must be a string")
 
     def os_regex(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Emulates the OSRegex_Execute engine."""
         self._last_substrings = []
+        self._validate_text(text)
         if self._raw_pattern in ('$', '^$', '^'):
             return (True, [(0, 0)]) if text == "" else (False, [])
 
@@ -116,7 +139,9 @@ class WazuhRegex:
 
     def get_substrings(self) -> list[str]:
         """Returns substrings captured by the last successful os_regex or pcre2_regex call."""
-        return self._last_substrings
+        # Do not expose mutable internal state to callers. In particular, a
+        # caller retaining this value must not be able to alter later results.
+        return self._last_substrings.copy()
 
     def validation_errors(self) -> dict[str, str]:
         """Return compile errors for engines that compile regular expressions.
@@ -135,7 +160,7 @@ class WazuhRegex:
 
         try:
             pcre2.compile(self._raw_pattern, jit=True)
-        except Exception as error:
+        except pcre2.PatternError as error:
             errors["PCRE2"] = f"Invalid for PCRE2: {error}"
 
         return errors
@@ -169,6 +194,7 @@ class WazuhRegex:
     def os_match(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Emulates the OSMatch_Execute (sregex) engine."""
         self._last_substrings = []  # sregex does not capture substrings.
+        self._validate_text(text)
         # Wazuh's matcher folds the single-byte ASCII alphabet. ``str.lower``
         # can expand a Unicode character into multiple code points (for
         # example, ``\u0130`` becomes ``i\u0307``), which makes match offsets in the
@@ -177,10 +203,7 @@ class WazuhRegex:
         match_found = False
         match_spans: list[tuple[int, int]] = []
 
-        try:
-            os_match_compiled = self._os_match_compile()
-        except Exception:
-            return False, []
+        os_match_compiled = self._os_match_compile()
 
         is_negated_rule = os_match_compiled[0][2] if os_match_compiled else False
         for strategy, pattern_arg, _ in os_match_compiled:
@@ -213,8 +236,13 @@ class WazuhRegex:
     def pcre2_regex(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Executes the pattern using the native PCRE2 engine."""
         self._last_substrings = []
+        self._validate_text(text)
         try:
             pcre2_pattern = pcre2.compile(self._raw_pattern, jit=True)
+        except pcre2.PatternError:
+            return False, []
+
+        try:
             matches = list(pcre2_pattern.finditer(text))
             if not matches:
                 return False, []
@@ -232,5 +260,6 @@ class WazuhRegex:
 
             self._last_substrings = substrings
             return True, spans
-        except Exception:
-            return False, []
+        except pcre2.LibraryError:
+            # Runtime engine failures are not equivalent to a non-match.
+            raise
