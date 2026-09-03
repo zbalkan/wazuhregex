@@ -270,6 +270,27 @@ def test_osregex_rejects_unsupported_operator_placement(pattern: str) -> None:
     assert "OS_Regex" in tool.validation_errors()
 
 
+def test_osregex_allows_repetition_of_tab_class() -> None:
+    assert WazuhRegex(r"^\t+$").os_regex("\t\t") == (True, [(0, 2)])
+
+
+@pytest.mark.parametrize(
+    "pattern, pcre_text, literal_text",
+    [
+        (r"\bcat\b", "cat", "bcatb"),
+        (r"\x41", "A", "x41"),
+        (r"(a)\1", "aa", "a1"),
+    ],
+)
+def test_osregex_does_not_enable_unknown_pcre_escapes(
+    pattern: str, pcre_text: str, literal_text: str
+) -> None:
+    tool = WazuhRegex(f"^{pattern}$")
+
+    assert tool.os_regex(pcre_text)[0] is False
+    assert tool.os_regex(literal_text)[0] is True
+
+
 def test_osregex_allows_escaped_alternation_inside_group() -> None:
     tool = WazuhRegex(r"^(left\|right)$")
 
@@ -463,6 +484,20 @@ def test_cli_module_preserves_empty_input() -> None:
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Match" in result.stdout
+
+
+def test_cli_preserves_input_whitespace() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex", "^ record $"],
+        input=" record \n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "OS_Match" in result.stdout
+    assert "✅ Match" in result.stdout
 
 
 @pytest.mark.parametrize(

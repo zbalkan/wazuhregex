@@ -12,7 +12,7 @@ class WazuhRegex:
     engine to test a pattern against a specific Wazuh regex flavor.
     """
 
-    _INVALID_MODIFIER_USE: Final[pcre2.Pattern] = pcre2.compile(r'(?<!\\[wdspWDSP\.])[*+]')
+    _INVALID_MODIFIER_USE: Final[pcre2.Pattern] = pcre2.compile(r'(?<!\\[wdsptWDSP\.])[*+]')
 
     _TRANSLATIONS: Final[dict[str, str]] = {
         r'\\': r'\\',
@@ -34,6 +34,7 @@ class WazuhRegex:
     # in the PCRE2 backend used for the emulation. Escape them when they occur
     # unescaped so that the backend cannot accidentally accept PCRE syntax.
     _PCRE_ONLY_METACHARACTERS: Final[frozenset[str]] = frozenset('.?[]{}')
+    _PCRE_METACHARACTERS: Final[frozenset[str]] = frozenset(r'\\.^$|?*+()[]{}')
     _ASCII_LOWERCASE_TRANSLATION: Final[dict[int, int]] = str.maketrans(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
     )
@@ -65,11 +66,15 @@ class WazuhRegex:
             replacement = self._TRANSLATIONS.get(token)
             if replacement is None:
                 character = self._raw_pattern[index]
-                # Preserve escapes not handled by OS_Regex's shorthand table
-                # as a unit. Otherwise the escaped character is visited again
-                # and mistaken for an unescaped PCRE-only metacharacter.
+                # A backslash quotes an otherwise literal OS_Regex character.
+                # Do not pass unknown escapes through to PCRE2: doing so would
+                # accidentally enable unsupported constructs such as ``\b``,
+                # ``\x41``, and backreferences.
                 if character == '\\' and len(token) == 2:
-                    translation_parts.append(token)
+                    quoted = token[1]
+                    if quoted in self._PCRE_METACHARACTERS:
+                        translation_parts.append('\\')
+                    translation_parts.append(quoted)
                     index += 2
                     continue
                 if character in self._PCRE_ONLY_METACHARACTERS:
