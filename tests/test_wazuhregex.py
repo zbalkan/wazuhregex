@@ -519,15 +519,32 @@ def test_cli_module_preserves_empty_input() -> None:
 
 def test_regex_comparer_converts_literal_to_all_engines() -> None:
     comparer = RegexComparer()
-    source = comparer.parse("^event$", Engine.PCRE2)
+    source = comparer.parse("^123$", Engine.PCRE2)
 
     assert {
         alternative.engine: alternative.pattern
         for alternative in comparer.alternatives(source)
     } == {
-        Engine.OSREGEX: "^event$",
-        Engine.SREGEX: "^event$",
+        Engine.OSREGEX: "^123$",
+        Engine.SREGEX: "^123$",
     }
+
+
+def test_regex_comparer_does_not_claim_case_sensitive_literal_is_equivalent() -> None:
+    comparer = RegexComparer()
+    pcre = comparer.parse("^event$", Engine.PCRE2)
+    osregex = comparer.parse("^event$", Engine.OSREGEX)
+
+    assert comparer.compare(pcre, osregex).relation.value == "unknown"
+    assert comparer.convert(pcre, target=Engine.OSREGEX).supported is False
+    assert comparer.convert(osregex, target=Engine.PCRE2).supported is False
+
+
+def test_osregex_punctuation_class_does_not_include_space_in_conversion() -> None:
+    converted = RegexComparer().convert(r"\p", Engine.OSREGEX, Engine.PCRE2)
+
+    assert converted.supported is True
+    assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False
 
 
 @pytest.mark.parametrize("pattern", [r"a{2,3}", r"a{2,}"])

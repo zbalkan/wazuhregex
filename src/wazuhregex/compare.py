@@ -124,7 +124,7 @@ _WORD_OS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 _DIGITS = frozenset("0123456789")
 _SPACE = frozenset(" ")
 _TAB = frozenset("\t")
-_PUNCT_OS = frozenset("()*+, -.:;<=>?[]!\"'#$%&|{}")
+_PUNCT_OS = frozenset("()*+,-.\\:;<=>?[]!\"'#$%&|{}")
 _PCRE_SPACE = frozenset("\t\r\n\f ")
 _ASCII_WORD = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 
@@ -175,6 +175,10 @@ def _matching(source: str, start: int, opening="(", closing=")") -> int | None:
             escaped = True
             continue
         if ch == opening:
+            # Character classes do not nest; an unescaped '[' inside one is
+            # an ordinary member. Parenthesized groups, by contrast, do nest.
+            if opening == "[" and depth:
+                continue
             depth += 1
         elif ch == closing:
             depth -= 1
@@ -291,7 +295,8 @@ def _parse_class(body: str) -> Node:
     i = 0
     classes = {"d": _DIGITS, "s": _PCRE_SPACE, "w": _ASCII_WORD}
     while i < len(body):
-        if i+2 < len(body) and body[i+1] == "-":
+        if (i+2 < len(body) and body[i] != "\\"
+                and body[i+1] == "-" and body[i+2] != "\\"):
             if ord(body[i+2]) < ord(body[i]):
                 return Unsupported("pcre2-descending-range", body)
             chars.update(map(chr, range(ord(body[i]), ord(body[i+2])+1)))
@@ -502,6 +507,22 @@ def fingerprint(pattern: Pattern | str, engine: Engine | str | None = None) -> s
 def _unsupported(node: Node) -> bool: return any(isinstance(x, Unsupported) for x in walk(node))
 
 
+def _has_case_sensitive_literal(node: Node) -> bool:
+    """Return whether ASCII case folding can change this expression's language."""
+    return any(
+        isinstance(value, Literal)
+        and any(character.isascii() and character.isalpha()
+                for character in value.value)
+        for value in walk(node)
+    )
+
+
+def _case_semantics_match(left: Pattern, right: Pattern, node: Node) -> bool:
+    """Check the one case-sensitivity difference represented by this AST."""
+    one_is_pcre2 = (left.engine == Engine.PCRE2) != (right.engine == Engine.PCRE2)
+    return not (one_is_pcre2 and _has_case_sensitive_literal(node))
+
+
 def compare(left, left_engine=None, right=None, right_engine=None) -> ComparisonResult:
     if isinstance(left, Pattern) and isinstance(left_engine, Pattern) and right is None:
         lp, rp = left, left_engine
@@ -510,7 +531,12 @@ def compare(left, left_engine=None, right=None, right_engine=None) -> Comparison
             raise TypeError("right pattern is required")
         lp, rp = _coerce(left, left_engine), _coerce(right, right_engine)
     a, b = canonicalize(lp.ast), canonicalize(rp.ast)
-    relation = Relation.UNKNOWN if _unsupported(a) or _unsupported(b) else Relation.EQUIVALENT if a == b else Relation.UNKNOWN
+    relation = (
+        Relation.EQUIVALENT
+        if not _unsupported(a) and not _unsupported(b) and a == b
+        and _case_semantics_match(lp, rp, a)
+        else Relation.UNKNOWN
+    )
     return ComparisonResult(relation, lp, rp, "canonical ASTs are identical" if relation == Relation.EQUIVALENT else "no safe proof")
 
 
@@ -595,6 +621,13 @@ def convert(pattern, source=None, target=None) -> ConversionResult:
     node = canonicalize(p.ast)
     if _unsupported(node):
         return ConversionResult(d, False, reason="source contains unsupported construct")
+    if ((p.engine == Engine.PCRE2) != (d == Engine.PCRE2)
+            and _has_case_sensitive_literal(node)):
+        return ConversionResult(
+            d,
+            False,
+            reason="PCRE2 and Wazuh's legacy engines use different case sensitivity",
+        )
     try:
         text = _EMITTERS[d](node)
     except ValueError as error:
