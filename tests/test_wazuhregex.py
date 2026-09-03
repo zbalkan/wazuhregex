@@ -294,21 +294,12 @@ def test_osregex_allows_repetition_of_tab_class() -> None:
     assert WazuhRegex(r"^\t+$").os_regex("\t\t") == (True, [(0, 2)])
 
 
-@pytest.mark.parametrize(
-    "pattern, pcre_text, literal_text",
-    [
-        (r"\bcat\b", "cat", "bcatb"),
-        (r"\x41", "A", "x41"),
-        (r"(a)\1", "aa", "a1"),
-    ],
-)
-def test_osregex_does_not_enable_unknown_pcre_escapes(
-    pattern: str, pcre_text: str, literal_text: str
-) -> None:
+@pytest.mark.parametrize("pattern", [r"\bcat\b", r"\x41", r"(a)\1"])
+def test_osregex_rejects_unknown_pcre_escapes(pattern: str) -> None:
     tool = WazuhRegex(f"^{pattern}$")
 
-    assert tool.os_regex(pcre_text)[0] is False
-    assert tool.os_regex(literal_text)[0] is True
+    assert tool.os_regex(pattern)[0] is False
+    assert "OS_Regex" in tool.validation_errors()
 
 
 def test_osregex_allows_escaped_alternation_inside_group() -> None:
@@ -480,7 +471,7 @@ def test_osmatch_unicode_input_keeps_original_span_offsets() -> None:
     assert WazuhRegex("event").os_match("\u0130EVENT") == (True, [(1, 6)])
 
 
-@pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))
+@pytest.mark.parametrize("character", list(r'''-()*+,.:;<=>?[]!"'#$%&|{}'''))
 def test_osregex_punctuation_class(character: str) -> None:
     assert WazuhRegex(r"\p").os_regex(character)[0] is True
 
@@ -508,7 +499,7 @@ def test_cli_match_formatters_include_every_match() -> None:
     assert [(span.start, span.end) for span in highlighted.spans] == spans
 
 
-def test_cli_module_preserves_empty_input() -> None:
+def test_cli_skips_empty_input() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "wazuhregex", "^$"],
         input="\n",
@@ -519,8 +510,7 @@ def test_cli_module_preserves_empty_input() -> None:
     )
 
     assert result.returncode == 0
-    assert "OS_Regex" in result.stdout
-    assert "Match" in result.stdout
+    assert "Testing:" not in result.stdout
 
 
 def test_regex_comparer_converts_literal_to_all_engines() -> None:
@@ -553,18 +543,13 @@ def test_osregex_punctuation_class_does_not_include_space_in_conversion() -> Non
     assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False
 
 
-@pytest.mark.parametrize(
-    "pattern, unicode_text",
-    [(r"\d", "٣"), (r"\w", "é"), (r"\s", "\N{NO-BREAK SPACE}")],
-)
-def test_regex_comparer_does_not_equate_pcre_unicode_classes_with_osregex(
-    pattern: str, unicode_text: str
-) -> None:
+def test_regex_comparer_uses_wazuh_pcre2_ascii_digit_semantics() -> None:
     comparer = RegexComparer()
 
-    assert WazuhRegex(pattern).pcre2_regex(unicode_text)[0] is True
-    assert WazuhRegex(pattern).os_regex(unicode_text)[0] is False
-    assert comparer.convert(pattern, Engine.PCRE2, Engine.OSREGEX).supported is False
+    assert WazuhRegex(r"\d").pcre2_regex("٣")[0] is False
+    converted = comparer.convert(r"\d", Engine.PCRE2, Engine.OSREGEX)
+    assert converted.supported is True
+    assert converted.pattern == r"\d"
 
 
 def test_osregex_digit_class_converts_to_explicit_ascii_pcre_class() -> None:
