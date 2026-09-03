@@ -128,6 +128,10 @@ def _run() -> None:
         # records are valid input to the Wazuh regex engines.
         text = _remove_line_delimiter(line)
 
+        # skip empty input
+        if not text or text.isspace():
+            continue
+
         # Create results table
         table = Table(title=f"Testing: {escape(text)}",
                       show_header=True, header_style="bold")
