@@ -395,6 +395,11 @@ def test_osmatch_clears_captures_created_by_another_engine() -> None:
     assert tool.get_substrings() == []
 
 
+def test_osmatch_unicode_input_keeps_original_span_offsets() -> None:
+    """Unicode case mappings must not move offsets in the original input."""
+    assert WazuhRegex("event").os_match("\u0130EVENT") == (True, [(1, 6)])
+
+
 @pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))
 def test_osregex_punctuation_class(character: str) -> None:
     assert WazuhRegex(r"\p").os_regex(character)[0] is True
@@ -425,6 +430,32 @@ def test_cli_module_preserves_empty_input() -> None:
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Match" in result.stdout
+
+
+@pytest.mark.parametrize("help_option", ["-h", "--help"])
+def test_cli_help_does_not_treat_option_as_a_pattern(help_option: str) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex", help_option],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Usage:" in result.stdout
+    assert "Pattern:" not in result.stdout
+
+
+def test_cli_requires_exactly_one_pattern() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "expected one pattern argument" in result.stdout
 
 
 def test_validation_errors_are_reported_per_engine() -> None:

@@ -63,6 +63,9 @@ Then provide input lines via stdin (interactive typing or piping).
 python src/wazuhregex.py --help
 ```
 
+The command exits with status 2 when the pattern argument is missing or when
+more than one positional argument is supplied.
+
 ### Example: interactive input
 
 Command:

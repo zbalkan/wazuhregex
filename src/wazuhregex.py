@@ -16,9 +16,15 @@ else:
 def main() -> None:
     console = Console()
 
+    if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
+        console.print(f"[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
+        console.print("Test each stdin line against Wazuh regex engines.")
+        return
+
     if len(sys.argv) != 2:
-        console.print(f"\n[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>' [-h/--help]")
-        sys.exit(0)
+        console.print(f"[bold red]Error:[/bold red] expected one pattern argument")
+        console.print(f"[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
+        sys.exit(2)
 
     pattern = sys.argv[1]
 

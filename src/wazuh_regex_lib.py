@@ -35,6 +35,9 @@ class WazuhRegex:
     # in the PCRE2 backend used for the emulation. Escape them when they occur
     # unescaped so that the backend cannot accidentally accept PCRE syntax.
     _PCRE_ONLY_METACHARACTERS: Final[frozenset[str]] = frozenset('.?[]{}')
+    _ASCII_LOWERCASE_TRANSLATION: Final[dict[int, int]] = str.maketrans(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+    )
 
     def __init__(self, pattern: str) -> None:
         if not isinstance(pattern, str):
@@ -166,7 +169,11 @@ class WazuhRegex:
     def os_match(self, text: str) -> tuple[bool, list[tuple[int, int]]]:
         """Emulates the OSMatch_Execute (sregex) engine."""
         self._last_substrings = []  # sregex does not capture substrings.
-        text_lower = text.lower()
+        # Wazuh's matcher folds the single-byte ASCII alphabet. ``str.lower``
+        # can expand a Unicode character into multiple code points (for
+        # example, ``\u0130`` becomes ``i\u0307``), which makes match offsets in the
+        # transformed string invalid for the original input.
+        text_lower = text.translate(self._ASCII_LOWERCASE_TRANSLATION)
         match_found = False
         match_spans: list[tuple[int, int]] = []
 
@@ -177,7 +184,9 @@ class WazuhRegex:
 
         is_negated_rule = os_match_compiled[0][2] if os_match_compiled else False
         for strategy, pattern_arg, _ in os_match_compiled:
-            pattern_lower = pattern_arg.lower()
+            pattern_lower = pattern_arg.translate(
+                self._ASCII_LOWERCASE_TRANSLATION
+            )
             start, end = -1, -1
             if strategy == "_exact" and text_lower == pattern_lower:
                 start, end = 0, len(text)
