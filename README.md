@@ -1,5 +1,10 @@
 # wazuhregex
 
+[![CI](https://github.com/zbalkan/wazuhregex/actions/workflows/ci.yml/badge.svg)](https://github.com/zbalkan/wazuhregex/actions/workflows/ci.yml)
+[![Dependabot Updates](https://github.com/zbalkan/wazuhregex/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/zbalkan/wazuhregex/actions/workflows/dependabot/dependabot-updates)
+[![Dependency Graph](https://github.com/zbalkan/wazuhregex/actions/workflows/dependabot/update-graph/badge.svg)](https://github.com/zbalkan/wazuhregex/actions/workflows/dependabot/update-graph)
+[![Publish to PyPI](https://github.com/zbalkan/wazuhregex/actions/workflows/publish.yml/badge.svg)](https://github.com/zbalkan/wazuhregex/actions/workflows/publish.yml)
+
 `wazuhregex` is a Python package and command-line tool that implements Wazuh regex behavior for local testing and development. It lets you validate one pattern against [all three Wazuh regex engines](https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/regex.html) in one run:
 
 - `OS_Regex`
