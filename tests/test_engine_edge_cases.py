@@ -1,9 +1,4 @@
-"""Additional engine edge-case coverage for the alpha emulator.
-
-These tests separate documented Wazuh behaviour from known emulator approximations.
-Known divergences are marked xfail so they stay visible without pretending that the
-alpha emulator is already bit-for-bit compatible with Wazuh.
-"""
+"""Engine edge cases that protect Wazuh 4.x compatibility."""
 
 import os
 import subprocess
@@ -22,7 +17,7 @@ CLI_ENV["PYTHONPATH"] = os.pathsep.join(
 )
 
 
-# OS_Regex: documented syntax and boundary behaviour.
+# OS_Regex: documented Wazuh 4.x syntax and boundary behaviour.
 
 
 def test_osregex_top_level_alternatives_keep_their_own_anchors() -> None:
@@ -86,32 +81,23 @@ def test_osregex_escaped_dot_matches_newline() -> None:
     assert WazuhRegex(r"^\.$").os_regex("\n")[0] is True
 
 
-@pytest.mark.xfail(
-    reason="Known alpha divergence: unsupported OS_Regex escapes are currently treated as quoted literals",
-    strict=False,
-)
 @pytest.mark.parametrize("pattern", [r"\b", r"\x41", r"\1", r"\q", r"\^"])
 def test_osregex_rejects_undocumented_escape_sequences(pattern: str) -> None:
-    assert "OS_Regex" in WazuhRegex(pattern).validation_errors()
+    tool = WazuhRegex(pattern)
+
+    assert tool.os_regex(pattern)[0] is False
+    assert "OS_Regex" in tool.validation_errors()
 
 
-@pytest.mark.xfail(
-    reason="Known alpha divergence: current punctuation translation includes backslash",
-    strict=False,
-)
 def test_osregex_punctuation_class_excludes_backslash() -> None:
     assert WazuhRegex(r"^\p$").os_regex("\\")[0] is False
 
 
-@pytest.mark.xfail(
-    reason="Known alpha divergence: the PCRE2 backend accepts nested groups that Wazuh OS_Regex rejects",
-    strict=False,
-)
-def test_osregex_rejects_nested_groups_even_without_alternation() -> None:
-    tool = WazuhRegex(r"^(outer(inner))$")
+@pytest.mark.parametrize("pattern", [r"^(outer(inner))$", "((a))", "(abc", "abc)"])
+def test_osregex_rejects_nested_or_unbalanced_groups(pattern: str) -> None:
+    tool = WazuhRegex(pattern)
 
     assert "OS_Regex" in tool.validation_errors()
-    assert tool.os_regex("outerinner")[0] is False
 
 
 # OS_Match: anchors, alternatives, negation, and literal treatment.
@@ -142,7 +128,7 @@ def test_osmatch_bang_is_special_only_at_the_start() -> None:
     assert WazuhRegex("^a!b$").os_match("A!B")[0] is True
 
 
-# PCRE2: documented semantics that differ from the legacy engines.
+# PCRE2: Wazuh 4.x invokes pcre2_compile() with option bits 0.
 
 
 def test_pcre2_dot_does_not_match_newline_by_default() -> None:
@@ -159,14 +145,8 @@ def test_pcre2_is_case_sensitive_unless_inline_modifier_is_used() -> None:
     "pattern,text",
     [
         (r"^\x41$", "A"),
-        pytest.param(
-            r"^\x{41}$",
-            "A",
-            marks=pytest.mark.xfail(
-                reason="Known alpha divergence: pcre2 0.6.0 does not accept Wazuh's documented braced hex form through this binding",
-                strict=False,
-            ),
-        ),
+        (r"^\x{41}$", "A"),
+        (r"^\x1$", "\x01"),
         (r"^\t$", "\t"),
         (r"^\r$", "\r"),
         (r"^\n$", "\n"),
@@ -177,20 +157,39 @@ def test_pcre2_documented_character_escapes(pattern: str, text: str) -> None:
     assert WazuhRegex(pattern).pcre2_regex(text)[0] is True
 
 
+def test_pcre2_hex_escape_with_no_digits_uses_zero_value() -> None:
+    assert WazuhRegex(r"^\xz$").pcre2_regex("\x00z")[0] is True
+
+
+def test_pcre2_rejects_braced_hex_outside_wazuh_8bit_range() -> None:
+    assert "PCRE2" in WazuhRegex(r"\x{100}").validation_errors()
+
+
+@pytest.mark.parametrize("pattern", [r"\u0041", r"\U"])
+def test_pcre2_rejects_alt_bsux_only_escapes(pattern: str) -> None:
+    assert "PCRE2" in WazuhRegex(pattern).validation_errors()
+
+
+def test_pcre2_character_classes_use_default_ascii_semantics() -> None:
+    assert WazuhRegex(r"^\d+$").pcre2_regex("٣")[0] is False
+    assert WazuhRegex(r"^\w+$").pcre2_regex("é")[0] is False
+    assert WazuhRegex(r"^\s+$").pcre2_regex("\N{NO-BREAK SPACE}")[0] is False
+
+
+def test_pcre2_explicit_ucp_can_enable_unicode_character_properties() -> None:
+    assert WazuhRegex(r"(*UCP)^\d+$").pcre2_regex("٣")[0] is True
+
+
+def test_pcre2_backslash_c_matches_one_code_unit_for_ascii_input() -> None:
+    assert WazuhRegex(r"^\C$").pcre2_regex("\n")[0] is True
+
+
 def test_pcre2_lazy_quantifier_changes_match_boundaries() -> None:
     assert WazuhRegex("a+").pcre2_regex("aaa")[1] == [(0, 3)]
     assert WazuhRegex("a+?").pcre2_regex("aaa")[1] == [(0, 1), (1, 2), (2, 3)]
 
 
-@pytest.mark.xfail(
-    reason="Known alpha divergence: the Python PCRE2 binding enables Unicode properties for str patterns",
-    strict=False,
-)
-def test_pcre2_digit_class_is_ascii_as_documented_by_wazuh() -> None:
-    assert WazuhRegex(r"^\d+$").pcre2_regex("٣")[0] is False
-
-
-# Cross-engine differences should remain explicit rather than being normalised away.
+# Cross-engine differences must remain explicit rather than being normalized away.
 
 
 def test_same_dot_spelling_has_different_osregex_and_pcre2_meaning() -> None:
@@ -207,8 +206,7 @@ def test_same_space_escape_has_different_osregex_and_pcre2_meaning() -> None:
     assert tool.pcre2_regex("\t")[0] is True
 
 
-# CLI record handling: blank records are intentionally skipped, while content on
-# non-empty records remains untouched.
+# CLI record handling.
 
 
 def test_cli_skips_blank_and_whitespace_only_records() -> None:
