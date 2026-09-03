@@ -13,6 +13,20 @@ else:
     from wazuh_regex_lib import WazuhRegex
 
 
+def _remove_line_delimiter(line: str) -> str:
+    """Remove one newline delimiter without discarding record content."""
+    if line.endswith("\n"):
+        line = line[:-1]
+        if line.endswith("\r"):
+            line = line[:-1]
+    return line
+
+
+def _format_substrings(substrings: list[str]) -> str:
+    """Format captured values as literal Rich markup-safe text."""
+    return ", ".join(f'"{escape(value)}"' for value in substrings)
+
+
 def main() -> None:
     console = Console()
 
@@ -22,7 +36,7 @@ def main() -> None:
         return
 
     if len(sys.argv) != 2:
-        console.print(f"[bold red]Error:[/bold red] expected one pattern argument")
+        console.print("[bold red]Error:[/bold red] expected one pattern argument")
         console.print(f"[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
         sys.exit(2)
 
@@ -49,7 +63,7 @@ def main() -> None:
     for line in sys.stdin:
         # Remove only the stream delimiter. Leading/trailing spaces and empty
         # records are valid input to the Wazuh regex engines.
-        text = line.rstrip('\r\n')
+        text = _remove_line_delimiter(line)
 
         # Create results table
         table = Table(title=f"Testing: {escape(text)}",
@@ -66,8 +80,7 @@ def main() -> None:
         elif is_match:
             substrings = wazuh_tool.get_substrings()
             span_str = str(spans[0]) if spans else "—"
-            groups_str = ", ".join(
-                f'"{s}"' for s in substrings) if substrings else "—"
+            groups_str = _format_substrings(substrings) if substrings else "—"
             table.add_row("OS_Regex", "✅ Match", span_str, groups_str)
         else:
             table.add_row("OS_Regex", "❌ No Match", "—", "—")
@@ -87,8 +100,7 @@ def main() -> None:
         elif is_match:
             substrings = wazuh_tool.get_substrings()
             span_str = str(spans[0]) if spans else "—"
-            groups_str = ", ".join(
-                f'"{s}"' for s in substrings) if substrings else "—"
+            groups_str = _format_substrings(substrings) if substrings else "—"
             table.add_row("PCRE2", "✅ Match", span_str, groups_str)
         else:
             table.add_row("PCRE2", "❌ No Match", "—", "—")

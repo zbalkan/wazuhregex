@@ -4,6 +4,7 @@ import sys
 import pytest
 
 from src.highlighter import Highlighter
+from src.wazuhregex import _remove_line_delimiter
 from src.wazuh_regex_lib import WazuhRegex
 
 # --- Data from C unit tests ---
@@ -430,6 +431,35 @@ def test_cli_module_preserves_empty_input() -> None:
     assert result.returncode == 0
     assert "OS_Regex" in result.stdout
     assert "Match" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("record\n", "record"),
+        ("record\r\n", "record"),
+        ("record\r", "record\r"),
+        ("record\r\r\n", "record\r"),
+        ("record", "record"),
+    ],
+)
+def test_remove_line_delimiter_preserves_record_content(
+    line: str, expected: str
+) -> None:
+    assert _remove_line_delimiter(line) == expected
+
+
+def test_cli_renders_captured_rich_markup_as_literal_text() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "src.wazuhregex", r"(\S+)"],
+        input="[bold]event[/bold]\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert '"[bold]event[/bold]"' in result.stdout
 
 
 @pytest.mark.parametrize("help_option", ["-h", "--help"])
