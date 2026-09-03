@@ -8,7 +8,7 @@
 `wazuhregex` is a Python package and command-line tool that implements Wazuh regex behavior for local testing and development. It lets you validate one pattern against [all three Wazuh regex engines](https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/regex.html) in one run:
 
 - `OS_Regex`
-- `OS_Match` (sregex)
+- `OS_Match` ([sregex](https://github.com/openresty/sregex))
 - `PCRE2`
 
 The project includes:
@@ -19,7 +19,7 @@ The project includes:
 
 ## Why this exists
 
-Wazuh rules can use regex engines that differ from common online testers. A pattern that works in PCRE-focused tools may fail in `OS_Regex` or `OS_Match`. On the other hand, you can use the original `wazuh-regex` tool, which is deployed on Wazuh manager servers. But that requires you to SSH to the servers for simple checks.
+Wazuh rules can use regex engines that differ from common online testers. A pattern that works in PCRE-focused tools may fail in `OS_Regex` or `OS_Match`. On the other hand, you can use [the original `wazuh-regex` tool](https://documentation.wazuh.com/current/user-manual/reference/tools/wazuh-regex.html), which is deployed on Wazuh manager servers under `/var/ossec/bin/` directory. But that requires you to SSH to the servers for simple checks.
 
 This project gives you a local, repeatable way to check behavior before shipping rules.
 
