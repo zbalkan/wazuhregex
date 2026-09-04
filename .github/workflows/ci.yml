@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - master
     paths-ignore: &documentation-only
       - "**/*.md"
       - "**/*.avif"

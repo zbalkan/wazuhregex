@@ -29,14 +29,51 @@ class Highlighter:
         if not spans:
             return text
 
-        # Work backwards so inserting escape sequences does not invalidate the
-        # offsets of spans that have not been processed yet.
-        highlighted = text
-        for start, end in sorted(spans, reverse=True):
-            if not 0 <= start <= end <= len(text):
+        text_length = len(text)
+        previous_start = -1
+        already_ordered = True
+        for start, end in spans:
+            if not 0 <= start <= end <= text_length:
                 raise ValueError(f"Invalid highlight span: {(start, end)}")
-            highlighted = (
-                f"{highlighted[:start]}{self.highlight_color}"
-                f"{highlighted[start:end]}{self.ENDC}{highlighted[end:]}"
-            )
-        return highlighted
+            if start < previous_start:
+                already_ordered = False
+            previous_start = start
+
+        # Regex finditer returns spans in ascending order, so normal CLI use
+        # avoids sorting entirely. Arbitrary callers still get stable ordering.
+        ordered = spans if already_ordered else sorted(spans)
+
+        previous_end = 0
+        overlaps = False
+        for start, end in ordered:
+            if start < previous_end:
+                overlaps = True
+            previous_end = max(previous_end, end)
+
+        if overlaps:
+            # Preserve the historical behavior for arbitrary caller-supplied
+            # overlapping spans. Regex finditer results are non-overlapping, so
+            # normal CLI use takes the linear construction path below.
+            highlighted = text
+            # The legacy implementation sorted complete (start, end) tuples.
+            # Equal-start spans therefore also need end-order normalization.
+            for start, end in reversed(sorted(ordered)):
+                highlighted = (
+                    f"{highlighted[:start]}{self.highlight_color}"
+                    f"{highlighted[start:end]}{self.ENDC}{highlighted[end:]}"
+                )
+            return highlighted
+
+        # Construct once rather than repeatedly slicing an ever-growing string.
+        # For the already ordered, non-overlapping spans produced by regex
+        # finditer this is O(N + K), instead of O(N*K) reconstruction.
+        pieces: list[str] = []
+        cursor = 0
+        for start, end in ordered:
+            pieces.append(text[cursor:start])
+            pieces.append(self.highlight_color)
+            pieces.append(text[start:end])
+            pieces.append(self.ENDC)
+            cursor = end
+        pieces.append(text[cursor:])
+        return ''.join(pieces)

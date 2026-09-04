@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+import multiprocessing
+import signal
 import sys
+from multiprocessing.connection import Connection
 
 from rich.console import Console
 from rich.markup import escape
@@ -11,6 +14,10 @@ from rich.text import Text
 from .compare import Engine, RegexComparer
 from .highlighter import Highlighter
 from .wazuh_regex_lib import WazuhRegex
+
+
+LINE_TIMEOUT_SECONDS = 0.1
+MAX_INPUT_LINES = 20
 
 
 def _remove_line_delimiter(line: str) -> str:
@@ -53,8 +60,6 @@ def _pattern_header(pattern: str) -> Table:
     comparer = RegexComparer()
     original_engine = comparer.detect_engine(pattern)
     if original_engine is None:
-        # Plain literals use the same spelling in every engine. Avoid parsing
-        # and conversion work, and do not imply that one engine was original.
         patterns = dict.fromkeys(Engine, pattern)
     else:
         patterns = {original_engine: pattern}
@@ -65,7 +70,6 @@ def _pattern_header(pattern: str) -> Table:
                  for alternative in comparer.alternatives(source)}
             )
         except ValueError:
-            # Compilation diagnostics remain the authority for invalid input.
             pass
 
     table = Table(title="Wazuh Regex Tester", show_header=True,
@@ -89,12 +93,175 @@ def _pattern_header(pattern: str) -> Table:
     return table
 
 
+def _evaluate_line(
+    tool: WazuhRegex,
+    text: str,
+    validation_errors: dict[str, str],
+) -> tuple[
+    tuple[bool, list[tuple[int, int]], list[str]],
+    tuple[bool, list[tuple[int, int]]],
+    tuple[bool, list[tuple[int, int]], list[str]],
+]:
+    """Evaluate one record against all three Wazuh engines."""
+    osregex_match, osregex_spans = tool.os_regex(text)
+    osregex_groups = (
+        tool.get_substrings()
+        if osregex_match and "OS_Regex" not in validation_errors
+        else []
+    )
+
+    osmatch_match, osmatch_spans = tool.os_match(text)
+
+    pcre2_match, pcre2_spans = tool.pcre2_regex(text)
+    pcre2_groups = (
+        tool.get_substrings()
+        if pcre2_match and "PCRE2" not in validation_errors
+        else []
+    )
+
+    return (
+        (osregex_match, osregex_spans, osregex_groups),
+        (osmatch_match, osmatch_spans),
+        (pcre2_match, pcre2_spans, pcre2_groups),
+    )
+
+
+def _line_worker(pattern: str, connection: Connection) -> None:
+    """Evaluate records in an isolated persistent process for hard timeouts."""
+    # Ctrl+C is owned by the parent process.  On Windows, console control events
+    # are delivered to every process sharing the console; leaving the default
+    # handler installed here makes an idle spawn worker print its own traceback.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    tool = WazuhRegex(pattern)
+    validation_errors = tool.validation_errors()
+    connection.send(("ready", validation_errors))
+    try:
+        while True:
+            text = connection.recv()
+            if text is None:
+                return
+            try:
+                connection.send(
+                    ("result", _evaluate_line(tool, text, validation_errors))
+                )
+            except Exception as error:  # pragma: no cover - defensive worker boundary
+                connection.send(
+                    ("error", f"{type(error).__name__}: {error}")
+                )
+    except (EOFError, KeyboardInterrupt):
+        # The explicit KeyboardInterrupt guard also keeps shutdown quiet if an
+        # interrupt arrives before the platform has applied the ignored signal.
+        return
+    finally:
+        connection.close()
+
+
+def _start_worker(
+    pattern: str,
+) -> tuple[multiprocessing.Process, Connection, dict[str, str]]:
+    """Start one reusable spawn worker and wait until pattern validation is ready."""
+    context = multiprocessing.get_context("spawn")
+    parent, child = context.Pipe()
+    process = context.Process(target=_line_worker, args=(pattern, child), daemon=True)
+    process.start()
+    child.close()
+
+    try:
+        kind, payload = parent.recv()
+    except EOFError as error:
+        process.join()
+        parent.close()
+        raise RuntimeError("regex worker failed to start") from error
+    if kind != "ready":
+        process.terminate()
+        process.join()
+        parent.close()
+        raise RuntimeError("regex worker returned an invalid startup message")
+    return process, parent, payload
+
+
+def _stop_worker(process: multiprocessing.Process, connection: Connection) -> None:
+    """Close a worker without leaving child processes behind."""
+    if process.is_alive():
+        try:
+            connection.send(None)
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+        process.join(timeout=0.2)
+    if process.is_alive():
+        process.terminate()
+        process.join()
+    connection.close()
+
+
+def _render_timeout(console: Console, text: str) -> None:
+    table = Table(title=f"Testing: {escape(text)}",
+                  show_header=True, header_style="bold")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Result", justify="center")
+    table.add_column("Match / Span")
+    table.add_column("Captured Groups", style="green")
+    for engine, groups in (("OS_Regex", "-"), ("OS_Match", "N/A"), ("PCRE2", "-")):
+        table.add_row(engine, "Timeout", "-", groups)
+    console.print(table)
+    console.print()
+
+
+def _render_results(
+    console: Console,
+    text: str,
+    validation_errors: dict[str, str],
+    results: tuple[
+        tuple[bool, list[tuple[int, int]], list[str]],
+        tuple[bool, list[tuple[int, int]]],
+        tuple[bool, list[tuple[int, int]], list[str]],
+    ],
+) -> None:
+    table = Table(title=f"Testing: {escape(text)}",
+                  show_header=True, header_style="bold")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Result", justify="center")
+    table.add_column("Match / Span")
+    table.add_column("Captured Groups", style="green")
+
+    (is_match, spans, substrings), osmatch, pcre2 = results
+    if "OS_Regex" in validation_errors:
+        table.add_row("OS_Regex", "Invalid", "-", "-")
+    elif is_match:
+        groups_str = _format_substrings(substrings) if substrings else "-"
+        table.add_row("OS_Regex", "Match", _format_match(text, spans), groups_str)
+    else:
+        table.add_row("OS_Regex", "No Match", "-", "-")
+
+    is_match, spans = osmatch
+    if is_match:
+        table.add_row("OS_Match", "Match", _format_match(text, spans), "N/A")
+    else:
+        table.add_row("OS_Match", "No Match", "-", "N/A")
+
+    is_match, spans, substrings = pcre2
+    if "PCRE2" in validation_errors:
+        table.add_row("PCRE2", "Invalid", "-", "-")
+    elif is_match:
+        groups_str = _format_substrings(substrings) if substrings else "-"
+        table.add_row("PCRE2", "Match", _format_match(text, spans), groups_str)
+    else:
+        table.add_row("PCRE2", "No Match", "-", "-")
+
+    console.print(table)
+    console.print()
+
+
 def _run() -> None:
     console = Console()
 
     if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
         console.print(f"[bold]Usage:[/bold] {sys.argv[0]} '<PATTERN>'")
         console.print("Test each stdin line against Wazuh regex engines.")
+        console.print(
+            f"Limits: {MAX_INPUT_LINES} input lines per run; "
+            f"{int(LINE_TIMEOUT_SECONDS * 1000)} ms evaluation time per line."
+        )
         return
 
     if len(sys.argv) != 2:
@@ -103,77 +270,51 @@ def _run() -> None:
         sys.exit(2)
 
     pattern = sys.argv[1]
-
-    # Detect the command-line expression heuristically when deriving equivalent
-    # spellings. Every conversion is round-trip checked by RegexComparer.
     console.print(Panel(f"[bold cyan]Input pattern:[/bold cyan] {escape(pattern)}"))
     console.print(_pattern_header(pattern))
 
-    try:
-        wazuh_tool = WazuhRegex(pattern)
-    except ValueError as error:
-        console.print(f"[red]Invalid pattern:[/red] {escape(str(error))}")
-        sys.exit(2)
+    process, connection, validation_errors = _start_worker(pattern)
     console.print("[green]OK[/green] Pattern loaded\n", style="dim")
-    validation_errors = wazuh_tool.validation_errors()
     for engine, error in validation_errors.items():
-        console.print(
-            f"[yellow]WARNING {engine}:[/yellow] {escape(error)}"
-        )
+        console.print(f"[yellow]WARNING {engine}:[/yellow] {escape(error)}")
     if validation_errors:
         console.print()
 
-    for line in sys.stdin:
-        # Remove only the stream delimiter. Leading/trailing spaces and empty
-        # records are valid input to the Wazuh regex engines.
-        text = _remove_line_delimiter(line)
+    try:
+        for line_number, line in enumerate(sys.stdin, start=1):
+            if line_number > MAX_INPUT_LINES:
+                console.print(
+                    f"[bold red]Error:[/bold red] input is limited to "
+                    f"{MAX_INPUT_LINES} lines per run"
+                )
+                sys.exit(2)
 
-        # skip empty input
-        if not text or text.isspace():
-            continue
+            text = _remove_line_delimiter(line)
+            if not text or text.isspace():
+                continue
 
-        # Create results table
-        table = Table(title=f"Testing: {escape(text)}",
-                      show_header=True, header_style="bold")
-        table.add_column("Engine", style="cyan")
-        table.add_column("Result", justify="center")
-        table.add_column("Match / Span")
-        table.add_column("Captured Groups", style="green")
+            try:
+                connection.send(text)
+            except (BrokenPipeError, EOFError, OSError):
+                _stop_worker(process, connection)
+                process, connection, validation_errors = _start_worker(pattern)
+                connection.send(text)
 
-        # Test OS_Regex
-        is_match, spans = wazuh_tool.os_regex(text)
-        if "OS_Regex" in validation_errors:
-            table.add_row("OS_Regex", "Invalid", "-", "-")
-        elif is_match:
-            substrings = wazuh_tool.get_substrings()
-            groups_str = _format_substrings(substrings) if substrings else "-"
-            table.add_row("OS_Regex", "Match",
-                          _format_match(text, spans), groups_str)
-        else:
-            table.add_row("OS_Regex", "No Match", "-", "-")
+            if not connection.poll(LINE_TIMEOUT_SECONDS):
+                _render_timeout(console, text)
+                _stop_worker(process, connection)
+                process, connection, validation_errors = _start_worker(pattern)
+                continue
 
-        # Test OS_Match
-        is_match, spans = wazuh_tool.os_match(text)
-        if is_match:
-            table.add_row("OS_Match", "Match",
-                          _format_match(text, spans), "N/A")
-        else:
-            table.add_row("OS_Match", "No Match", "-", "N/A")
-
-        # Test PCRE2
-        is_match, spans = wazuh_tool.pcre2_regex(text)
-        if "PCRE2" in validation_errors:
-            table.add_row("PCRE2", "Invalid", "-", "-")
-        elif is_match:
-            substrings = wazuh_tool.get_substrings()
-            groups_str = _format_substrings(substrings) if substrings else "-"
-            table.add_row("PCRE2", "Match",
-                          _format_match(text, spans), groups_str)
-        else:
-            table.add_row("PCRE2", "No Match", "-", "-")
-
-        console.print(table)
-        console.print()  # Blank line between tests
+            kind, payload = connection.recv()
+            if kind == "result":
+                _render_results(console, text, validation_errors, payload)
+            else:
+                console.print(
+                    f"[bold red]Runtime error:[/bold red] {escape(str(payload))}"
+                )
+    finally:
+        _stop_worker(process, connection)
 
 
 def main() -> int:
@@ -181,9 +322,6 @@ def main() -> int:
     try:
         _run()
     except KeyboardInterrupt:
-        # Catch this in the console entry point rather than installing a signal
-        # handler. This is portable and also works in pip/pipx launchers, which
-        # call ``main`` directly instead of executing this module's guard.
         print("bye!")
         return 130
     return 0

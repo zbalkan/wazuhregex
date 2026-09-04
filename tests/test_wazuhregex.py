@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from wazuhregex.cli import (
     _highlight_matches,
     _pattern_header,
     _remove_line_delimiter,
+    _line_worker,
     main,
 )
 
@@ -185,9 +187,9 @@ EXTRACTION_DATA: list[tuple[str, str, list[str]]] = [
     (r"123 (\d+.\d.\d.\d\d*\d*)", "123 45.6.5.567", ["45.6.5.567"]),
     (r"from (\S*\d+.\d+.\d+.\d\d*\d*)",
      "sshd[21576]: Illegal user web14 from ::ffff:212.227.60.55", ["::ffff:212.227.60.55"]),
-    (r"^sshd\[\d+\]: Accepted \S+ for (\S+) from (\S+) port ",
+    (r"^sshd[\d+]: Accepted \S+ for (\S+) from (\S+) port ",
      "sshd[21405]: Accepted password for root from 192.1.1.1 port 6023", ["root", "192.1.1.1"]),
-    (r": \((\S+)@(\S+)\) \[", "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
+    (r": \((\S+)@(\S+)\) [", "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
      ["?", "enigma.lab.ossec.net"]),
 ]
 
@@ -294,21 +296,12 @@ def test_osregex_allows_repetition_of_tab_class() -> None:
     assert WazuhRegex(r"^\t+$").os_regex("\t\t") == (True, [(0, 2)])
 
 
-@pytest.mark.parametrize(
-    "pattern, pcre_text, literal_text",
-    [
-        (r"\bcat\b", "cat", "bcatb"),
-        (r"\x41", "A", "x41"),
-        (r"(a)\1", "aa", "a1"),
-    ],
-)
-def test_osregex_does_not_enable_unknown_pcre_escapes(
-    pattern: str, pcre_text: str, literal_text: str
-) -> None:
+@pytest.mark.parametrize("pattern", [r"\bcat\b", r"\x41", r"(a)\1"])
+def test_osregex_rejects_unknown_pcre_escapes(pattern: str) -> None:
     tool = WazuhRegex(f"^{pattern}$")
 
-    assert tool.os_regex(pcre_text)[0] is False
-    assert tool.os_regex(literal_text)[0] is True
+    assert tool.os_regex(pattern)[0] is False
+    assert "OS_Regex" in tool.validation_errors()
 
 
 def test_osregex_allows_escaped_alternation_inside_group() -> None:
@@ -480,7 +473,7 @@ def test_osmatch_unicode_input_keeps_original_span_offsets() -> None:
     assert WazuhRegex("event").os_match("\u0130EVENT") == (True, [(1, 6)])
 
 
-@pytest.mark.parametrize("character", list(r'''-()*+,.\:;<=>?[]!"'#$%&|{}'''))
+@pytest.mark.parametrize("character", list(r'''-()*+,.:;<=>?[]!"'#$%&|{}'''))
 def test_osregex_punctuation_class(character: str) -> None:
     assert WazuhRegex(r"\p").os_regex(character)[0] is True
 
@@ -498,6 +491,14 @@ def test_highlighter_rejects_invalid_span() -> None:
         Highlighter().apply("text", [(0, 5)])
 
 
+def test_highlighter_normalizes_equal_start_overlapping_spans() -> None:
+    highlighter = Highlighter(highlight_color="<")
+
+    assert highlighter.apply("text", [(0, 4), (0, 2)]) == (
+        f"<<t{Highlighter.ENDC}ext{Highlighter.ENDC}"
+    )
+
+
 def test_cli_match_formatters_include_every_match() -> None:
     spans = [(0, 3), (8, 11)]
 
@@ -508,7 +509,7 @@ def test_cli_match_formatters_include_every_match() -> None:
     assert [(span.start, span.end) for span in highlighted.spans] == spans
 
 
-def test_cli_module_preserves_empty_input() -> None:
+def test_cli_skips_empty_input() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "wazuhregex", "^$"],
         input="\n",
@@ -519,8 +520,7 @@ def test_cli_module_preserves_empty_input() -> None:
     )
 
     assert result.returncode == 0
-    assert "OS_Regex" in result.stdout
-    assert "Match" in result.stdout
+    assert "Testing:" not in result.stdout
 
 
 def test_regex_comparer_converts_literal_to_all_engines() -> None:
@@ -553,18 +553,47 @@ def test_osregex_punctuation_class_does_not_include_space_in_conversion() -> Non
     assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False
 
 
-@pytest.mark.parametrize(
-    "pattern, unicode_text",
-    [(r"\d", "٣"), (r"\w", "é"), (r"\s", "\N{NO-BREAK SPACE}")],
-)
-def test_regex_comparer_does_not_equate_pcre_unicode_classes_with_osregex(
-    pattern: str, unicode_text: str
+def test_regex_comparer_uses_wazuh_pcre2_ascii_digit_semantics() -> None:
+    comparer = RegexComparer()
+
+    assert WazuhRegex(r"\d").pcre2_regex("٣")[0] is False
+    converted = comparer.convert(r"\d", Engine.PCRE2, Engine.OSREGEX)
+    assert converted.supported is True
+    assert converted.pattern == r"\d"
+
+
+def test_regex_comparer_expands_ranges_with_escaped_endpoints() -> None:
+    converted = RegexComparer().convert(
+        r"^[\x41-\x5a]$", Engine.PCRE2, Engine.PCRE2,
+    )
+
+    assert converted.supported is True
+    assert WazuhRegex(converted.pattern).pcre2_regex("M")[0] is True
+    assert WazuhRegex(converted.pattern).pcre2_regex("-")[0] is False
+
+
+@pytest.mark.parametrize("pattern", [r"\v", r"[\v]"])
+def test_regex_comparer_supports_pcre2_vertical_whitespace(pattern: str) -> None:
+    comparer = RegexComparer()
+
+    converted = comparer.convert(pattern, Engine.PCRE2, Engine.PCRE2)
+
+    assert converted.supported is True
+
+
+@pytest.mark.parametrize("character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"])
+def test_regex_comparer_models_the_complete_pcre2_vertical_space_class(
+    character: str,
 ) -> None:
     comparer = RegexComparer()
 
-    assert WazuhRegex(pattern).pcre2_regex(unicode_text)[0] is True
-    assert WazuhRegex(pattern).os_regex(unicode_text)[0] is False
-    assert comparer.convert(pattern, Engine.PCRE2, Engine.OSREGEX).supported is False
+    assert character in comparer.parse(r"\v", Engine.PCRE2).ast.chars
+
+
+def test_regex_comparer_round_trips_pcre2_whitespace_class() -> None:
+    converted = RegexComparer().convert(r"\s", Engine.PCRE2, Engine.PCRE2)
+
+    assert converted.supported is True
 
 
 def test_osregex_digit_class_converts_to_explicit_ascii_pcre_class() -> None:
@@ -731,6 +760,22 @@ def test_cli_help_does_not_treat_option_as_a_pattern(help_option: str) -> None:
     assert result.returncode == 0
     assert "Usage:" in result.stdout
     assert "Pattern:" not in result.stdout
+    assert "20 input lines per run" in result.stdout
+    assert "100 ms evaluation time per line" in result.stdout
+
+
+def test_cli_rejects_more_than_twenty_physical_input_lines() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "wazuhregex", "event"],
+        input="\n" * 21,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=CLI_ENV,
+    )
+
+    assert result.returncode == 2
+    assert "limited to 20 lines per run" in result.stdout
 
 
 def test_cli_requires_exactly_one_pattern() -> None:
@@ -799,3 +844,30 @@ def test_cli_handles_keyboard_interrupt(monkeypatch, capsys) -> None:
 
     assert main() == 130
     assert "bye!" in capsys.readouterr().out
+
+
+def test_line_worker_ignores_keyboard_interrupt(monkeypatch) -> None:
+    """A console Ctrl+C is handled only by the parent process."""
+    installed_handlers = []
+
+    class InterruptedConnection:
+        def send(self, _message):
+            pass
+
+        def recv(self):
+            raise KeyboardInterrupt
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        signal,
+        "signal",
+        lambda signal_number, handler: installed_handlers.append(
+            (signal_number, handler)
+        ),
+    )
+
+    _line_worker("test", InterruptedConnection())
+
+    assert installed_handlers == [(signal.SIGINT, signal.SIG_IGN)]
