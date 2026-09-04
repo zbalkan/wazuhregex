@@ -255,9 +255,77 @@ class WazuhRegex:
                 parts: list[str] = []
                 index = 0
                 quoted = False
+                in_character_class = False
+                extended = False
+                # Each real group records the extended-mode state inherited
+                # at its opening. This lets scoped option groups restore it
+                # when their closing parenthesis is reached.
+                group_extended: list[bool] = []
                 braced_hex = re.compile(r"x\{([0-9a-fA-F]+)\}")
+                option_group = re.compile(
+                    r"\(\?([a-zA-Z]*)(?:-([a-zA-Z]*))?([:)])"
+                )
                 while index < len(pattern):
+                    # PCRE2 ignores both (?#...) comments and, in extended
+                    # mode, text from an unescaped # through the line ending.
+                    # Copy those regions verbatim before looking for \Q/\E or
+                    # braced hex escapes inside them.
+                    if (
+                        not quoted
+                        and not in_character_class
+                        and pattern.startswith("(?#", index)
+                    ):
+                        end = pattern.find(")", index + 3)
+                        end = len(pattern) if end < 0 else end + 1
+                        parts.append(pattern[index:end])
+                        index = end
+                        continue
+                    if (
+                        not quoted
+                        and not in_character_class
+                        and extended
+                        and pattern[index] == "#"
+                    ):
+                        end = pattern.find("\n", index + 1)
+                        end = len(pattern) if end < 0 else end + 1
+                        parts.append(pattern[index:end])
+                        index = end
+                        continue
+
+                    if (
+                        not quoted
+                        and not in_character_class
+                        and pattern[index] == "("
+                    ):
+                        options = option_group.match(pattern, index)
+                        if options is not None:
+                            enabled, disabled, terminator = options.groups()
+                            new_extended = extended
+                            if "x" in enabled:
+                                new_extended = True
+                            if disabled and "x" in disabled:
+                                new_extended = False
+                            parts.append(options.group(0))
+                            index = options.end()
+                            if terminator == ":":
+                                group_extended.append(extended)
+                            extended = new_extended
+                            continue
+                        group_extended.append(extended)
+                    elif (
+                        not quoted
+                        and not in_character_class
+                        and pattern[index] == ")"
+                        and group_extended
+                    ):
+                        extended = group_extended.pop()
+
                     if pattern[index] != "\\":
+                        if not quoted:
+                            if pattern[index] == "[" and not in_character_class:
+                                in_character_class = True
+                            elif pattern[index] == "]" and in_character_class:
+                                in_character_class = False
                         parts.append(pattern[index])
                         index += 1
                         continue

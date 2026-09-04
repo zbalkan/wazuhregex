@@ -198,6 +198,26 @@ def test_pcre2_utf_does_not_adapt_braced_hex_inside_quoted_literal() -> None:
     assert pattern.pcre2_regex("\u0100")[0] is False
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(*UTF)(?x)# ignored \\Q quote marker\n^\\x{100}$",
+        "(*UTF)(?# ignored \\Q quote marker)^\\x{100}$",
+        "(*UTF)(?x: # ignored \\Q quote marker\n)^\\x{100}$",
+    ],
+)
+def test_pcre2_utf_adaptation_ignores_quote_markers_in_comments(
+    pattern: str,
+) -> None:
+    assert WazuhRegex(pattern).pcre2_regex("\u0100")[0] is True
+
+
+def test_pcre2_utf_extended_hash_in_character_class_is_not_a_comment() -> None:
+    pattern = "(*UTF)(?x)^[#]\\x{100}$"
+
+    assert WazuhRegex(pattern).pcre2_regex("#\u0100")[0] is True
+
+
 @pytest.mark.parametrize("pattern", [r"\u0041", r"\U"])
 def test_pcre2_rejects_alt_bsux_only_escapes(pattern: str) -> None:
     assert "PCRE2" in WazuhRegex(pattern).validation_errors()
