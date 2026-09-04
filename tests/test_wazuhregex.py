@@ -562,6 +562,16 @@ def test_regex_comparer_uses_wazuh_pcre2_ascii_digit_semantics() -> None:
     assert converted.pattern == r"\d"
 
 
+def test_regex_comparer_expands_ranges_with_escaped_endpoints() -> None:
+    converted = RegexComparer().convert(
+        r"^[\x41-\x5a]$", Engine.PCRE2, Engine.PCRE2,
+    )
+
+    assert converted.supported is True
+    assert WazuhRegex(converted.pattern).pcre2_regex("M")[0] is True
+    assert WazuhRegex(converted.pattern).pcre2_regex("-")[0] is False
+
+
 @pytest.mark.parametrize("pattern", [r"\v", r"[\v]"])
 def test_regex_comparer_supports_pcre2_vertical_whitespace(pattern: str) -> None:
     comparer = RegexComparer()

@@ -252,25 +252,49 @@ class WazuhRegex:
             # normalization contract, but pass the equivalent code point to
             # the wrapper when the pattern explicitly selected UTF mode.
             if pattern.startswith(("(*UTF)", "(*UTF8)")):
-                def adapt_braced_hex(match: re.Match[str]) -> str:
-                    slashes, digits = match.groups()
-                    if len(slashes) % 2 == 0:
-                        return match.group(0)
-                    value = int(digits, 16)
-                    if value > 0x10FFFF:
+                parts: list[str] = []
+                index = 0
+                quoted = False
+                braced_hex = re.compile(r"x\{([0-9a-fA-F]+)\}")
+                while index < len(pattern):
+                    if pattern[index] != "\\":
+                        parts.append(pattern[index])
+                        index += 1
+                        continue
+
+                    end = index
+                    while end < len(pattern) and pattern[end] == "\\":
+                        end += 1
+                    slashes = pattern[index:end]
+                    marker = pattern[end:end + 1]
+                    parts.append(slashes)
+
+                    if len(slashes) % 2 and marker == ("E" if quoted else "Q"):
+                        parts.append(marker)
+                        quoted = not quoted
+                        index = end + 1
+                        continue
+
+                    match = (
+                        None
+                        if quoted or len(slashes) % 2 == 0
+                        else braced_hex.match(pattern, end)
+                    )
+                    if match is None:
+                        index = end
+                        continue
+
+                    value = int(match.group(1), 16)
+                    if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF:
                         raise ValueError(
                             "Invalid for Wazuh PCRE2: braced hex value is not a Unicode code point."
                         )
-                    escaped = (
+                    parts[-1] = slashes[:-1]
+                    parts.append(
                         f"\\u{value:04x}" if value <= 0xFFFF else f"\\U{value:08x}"
                     )
-                    return slashes[:-1] + escaped
-
-                pattern = re.sub(
-                    r"(\\+)x\{([0-9a-fA-F]+)\}",
-                    adapt_braced_hex,
-                    pattern,
-                )
+                    index = match.end()
+                pattern = "".join(parts)
             try:
                 # Wazuh 4.x invokes pcre2_compile() with option bits 0. The Python
                 # binding turns on UCP for str patterns; ASCII disables that wrapper

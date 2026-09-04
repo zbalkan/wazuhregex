@@ -187,6 +187,17 @@ def test_pcre2_utf_braced_hex_adaptation_preserves_regex_syntax(
     assert WazuhRegex(pattern).pcre2_regex(text)[0] is True
 
 
+def test_pcre2_utf_rejects_surrogate_braced_hex_escape() -> None:
+    assert "PCRE2" in WazuhRegex(r"(*UTF)^\x{D800}$").validation_errors()
+
+
+def test_pcre2_utf_does_not_adapt_braced_hex_inside_quoted_literal() -> None:
+    pattern = WazuhRegex(r"(*UTF)^\Q\x{100}\E$")
+
+    assert pattern.pcre2_regex(r"\x{100}")[0] is True
+    assert pattern.pcre2_regex("\u0100")[0] is False
+
+
 @pytest.mark.parametrize("pattern", [r"\u0041", r"\U"])
 def test_pcre2_rejects_alt_bsux_only_escapes(pattern: str) -> None:
     assert "PCRE2" in WazuhRegex(pattern).validation_errors()

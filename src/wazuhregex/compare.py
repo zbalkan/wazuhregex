@@ -312,37 +312,47 @@ def _quant(node: Node, source: str, i: int) -> tuple[Node, int]:
 def _parse_class(body: str) -> Node:
     negated = body.startswith("^")
     body = body[1:] if negated else body
-    chars: set[str] = set()
+    atoms: list[tuple[frozenset[str], bool]] = []
     i = 0
     classes = {"d": _DIGITS, "s": _PCRE_SPACE, "w": _ASCII_WORD}
     classes["v"] = _PCRE_VERTICAL_SPACE
     escaped_characters = {"t": "\t", "r": "\r", "n": "\n", "f": "\f"}
     while i < len(body):
-        if (i+2 < len(body) and body[i] != "\\"
-                and body[i+1] == "-" and body[i+2] != "\\"):
-            if ord(body[i+2]) < ord(body[i]):
-                return Unsupported("pcre2-descending-range", body)
-            chars.update(map(chr, range(ord(body[i]), ord(body[i+2])+1)))
-            i += 3
-        elif body[i] == "\\" and i+1 < len(body):
+        if body[i] == "\\" and i+1 < len(body):
             escaped = body[i+1]
             if (escaped == "x" and i+3 < len(body)
                     and all(character in "0123456789abcdefABCDEF"
                             for character in body[i+2:i+4])):
-                chars.add(chr(int(body[i+2:i+4], 16)))
+                atoms.append((frozenset((chr(int(body[i+2:i+4], 16)),)), False))
                 i += 4
                 continue
             if escaped in classes:
-                chars.update(classes[escaped])
+                atoms.append((classes[escaped], False))
             elif escaped in escaped_characters:
-                chars.add(escaped_characters[escaped])
+                atoms.append((frozenset((escaped_characters[escaped],)), False))
             elif escaped.isalnum():
                 return Unsupported("pcre2-class-escape", body)
             else:
-                chars.add(escaped)
+                atoms.append((frozenset((escaped,)), False))
             i += 2
         else:
-            chars.add(body[i])
+            atoms.append((frozenset((body[i],)), body[i] == "-"))
+            i += 1
+
+    chars: set[str] = set()
+    i = 0
+    while i < len(atoms):
+        if i + 2 < len(atoms) and atoms[i + 1][1]:
+            left, right = atoms[i][0], atoms[i + 2][0]
+            if len(left) != 1 or len(right) != 1:
+                return Unsupported("pcre2-class-range-endpoint", body)
+            start, end = next(iter(left)), next(iter(right))
+            if ord(end) < ord(start):
+                return Unsupported("pcre2-descending-range", body)
+            chars.update(map(chr, range(ord(start), ord(end) + 1)))
+            i += 3
+        else:
+            chars.update(atoms[i][0])
             i += 1
     return CharSet(frozenset(chars), negated)
 
