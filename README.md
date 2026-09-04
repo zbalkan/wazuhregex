@@ -89,7 +89,7 @@ The help text prints the fixed 20-line and 100 ms limits. The command exits with
 
 ### Example: interactive input
 
-<img class="fit-picture" src="assets/screenshot.png" alt="An example of the CLI tool capturing ssh logs" />
+![An example of the CLI tool capturing SSH logs](https://github.com/zbalkan/wazuhregex/raw/main/assets/screenshot.png)
 
 ### Example: piped input
 
@@ -156,7 +156,7 @@ The project is open-source, but upstream development is owner-maintained. You ma
 
 ## License and third-party material
 
-This project is licensed under the GNU General Public License, version 2 only. See [`LICENSE`](LICENSE) for the full terms and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the origin and licensing of test material and dependencies.
+This project is licensed under the GNU General Public License, version 2 only. See [`LICENSE`](https://github.com/zbalkan/wazuhregex/raw/main/LICENSE) for the full terms and [`THIRD_PARTY_NOTICES.md`](https://github.com/zbalkan/wazuhregex/raw/main/THIRD_PARTY_NOTICES.md) for the origin and licensing of test material and dependencies.
 
 ## Building and publishing
 
