@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from wazuhregex.cli import (
     _highlight_matches,
     _pattern_header,
     _remove_line_delimiter,
+    _line_worker,
     main,
 )
 
@@ -800,3 +802,30 @@ def test_cli_handles_keyboard_interrupt(monkeypatch, capsys) -> None:
 
     assert main() == 130
     assert "bye!" in capsys.readouterr().out
+
+
+def test_line_worker_ignores_keyboard_interrupt(monkeypatch) -> None:
+    """A console Ctrl+C is handled only by the parent process."""
+    installed_handlers = []
+
+    class InterruptedConnection:
+        def send(self, _message):
+            pass
+
+        def recv(self):
+            raise KeyboardInterrupt
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        signal,
+        "signal",
+        lambda signal_number, handler: installed_handlers.append(
+            (signal_number, handler)
+        ),
+    )
+
+    _line_worker("test", InterruptedConnection())
+
+    assert installed_handlers == [(signal.SIGINT, signal.SIG_IGN)]

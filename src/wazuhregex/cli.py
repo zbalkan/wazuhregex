@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import multiprocessing
+import signal
 import sys
 from multiprocessing.connection import Connection
 
@@ -127,6 +128,10 @@ def _evaluate_line(
 
 def _line_worker(pattern: str, connection: Connection) -> None:
     """Evaluate records in an isolated persistent process for hard timeouts."""
+    # Ctrl+C is owned by the parent process.  On Windows, console control events
+    # are delivered to every process sharing the console; leaving the default
+    # handler installed here makes an idle spawn worker print its own traceback.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     tool = WazuhRegex(pattern)
     validation_errors = tool.validation_errors()
     connection.send(("ready", validation_errors))
@@ -143,7 +148,9 @@ def _line_worker(pattern: str, connection: Connection) -> None:
                 connection.send(
                     ("error", f"{type(error).__name__}: {error}")
                 )
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
+        # The explicit KeyboardInterrupt guard also keeps shutdown quiet if an
+        # interrupt arrives before the platform has applied the ignored signal.
         return
     finally:
         connection.close()
