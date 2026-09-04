@@ -55,7 +55,9 @@ class Highlighter:
             # overlapping spans. Regex finditer results are non-overlapping, so
             # normal CLI use takes the linear construction path below.
             highlighted = text
-            for start, end in reversed(ordered):
+            # The legacy implementation sorted complete (start, end) tuples.
+            # Equal-start spans therefore also need end-order normalization.
+            for start, end in reversed(sorted(ordered)):
                 highlighted = (
                     f"{highlighted[:start]}{self.highlight_color}"
                     f"{highlighted[start:end]}{self.ENDC}{highlighted[end:]}"

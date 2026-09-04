@@ -126,6 +126,7 @@ _SPACE = frozenset(" ")
 _TAB = frozenset("\t")
 _PUNCT_OS = frozenset("()*+,-.:;<=>?[]!\"'#$%&|{}")
 _PCRE_SPACE = frozenset("\t\n\v\f\r ")
+_PCRE_VERTICAL_SPACE = frozenset("\n\v\f\r\x85\u2028\u2029")
 _ASCII_WORD = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 _OSREGEX_LITERAL_ESCAPES = frozenset("()$|<\\")
 
@@ -314,6 +315,8 @@ def _parse_class(body: str) -> Node:
     chars: set[str] = set()
     i = 0
     classes = {"d": _DIGITS, "s": _PCRE_SPACE, "w": _ASCII_WORD}
+    classes["v"] = _PCRE_VERTICAL_SPACE
+    escaped_characters = {"t": "\t", "r": "\r", "n": "\n", "f": "\f"}
     while i < len(body):
         if (i+2 < len(body) and body[i] != "\\"
                 and body[i+1] == "-" and body[i+2] != "\\"):
@@ -323,8 +326,16 @@ def _parse_class(body: str) -> Node:
             i += 3
         elif body[i] == "\\" and i+1 < len(body):
             escaped = body[i+1]
+            if (escaped == "x" and i+3 < len(body)
+                    and all(character in "0123456789abcdefABCDEF"
+                            for character in body[i+2:i+4])):
+                chars.add(chr(int(body[i+2:i+4], 16)))
+                i += 4
+                continue
             if escaped in classes:
                 chars.update(classes[escaped])
+            elif escaped in escaped_characters:
+                chars.add(escaped_characters[escaped])
             elif escaped.isalnum():
                 return Unsupported("pcre2-class-escape", body)
             else:
@@ -356,6 +367,7 @@ def _parse_pcre2(source: str) -> Node:
         "t": Literal("\t"),
         "r": Literal("\r"),
         "n": Literal("\n"),
+        "v": CharSet(_PCRE_VERTICAL_SPACE),
         "f": Literal("\f"),
     }
     items: list[Node] = []

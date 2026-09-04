@@ -1,3 +1,4 @@
+import re
 from typing import Final
 
 import pcre2
@@ -161,6 +162,7 @@ class WazuhRegex:
         ALT_BSUX changes while retaining the string API.
         """
         parts: list[str] = []
+        utf_enabled = pattern.startswith(("(*UTF)", "(*UTF8)"))
         index = 0
         while index < len(pattern):
             if pattern[index] != '\\':
@@ -198,11 +200,14 @@ class WazuhRegex:
                         index = end + 1
                         continue
                     value = int(digits, 16)
-                    if value > 0xFF:
+                    if value > 0xFF and not utf_enabled:
                         raise ValueError(
                             "Invalid for Wazuh PCRE2: braced hex value exceeds 8-bit range."
                         )
-                    parts.append(f"\\x{value:02x}")
+                    if utf_enabled:
+                        parts.append(pattern[index:end + 1])
+                    else:
+                        parts.append(f"\\x{value:02x}")
                     index = end + 1
                     continue
 
@@ -242,6 +247,30 @@ class WazuhRegex:
 
         try:
             pattern = self._normalize_wazuh_pcre2(self._raw_pattern)
+            # pcre2.py forces ALT_BSUX, under which its backend does not
+            # recognize PCRE2's braced hex spelling. Keep that spelling in the
+            # normalization contract, but pass the equivalent code point to
+            # the wrapper when the pattern explicitly selected UTF mode.
+            if pattern.startswith(("(*UTF)", "(*UTF8)")):
+                def adapt_braced_hex(match: re.Match[str]) -> str:
+                    slashes, digits = match.groups()
+                    if len(slashes) % 2 == 0:
+                        return match.group(0)
+                    value = int(digits, 16)
+                    if value > 0x10FFFF:
+                        raise ValueError(
+                            "Invalid for Wazuh PCRE2: braced hex value is not a Unicode code point."
+                        )
+                    escaped = (
+                        f"\\u{value:04x}" if value <= 0xFFFF else f"\\U{value:08x}"
+                    )
+                    return slashes[:-1] + escaped
+
+                pattern = re.sub(
+                    r"(\\+)x\{([0-9a-fA-F]+)\}",
+                    adapt_braced_hex,
+                    pattern,
+                )
             try:
                 # Wazuh 4.x invokes pcre2_compile() with option bits 0. The Python
                 # binding turns on UCP for str patterns; ASCII disables that wrapper

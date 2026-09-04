@@ -165,6 +165,28 @@ def test_pcre2_rejects_braced_hex_outside_wazuh_8bit_range() -> None:
     assert "PCRE2" in WazuhRegex(r"\x{100}").validation_errors()
 
 
+@pytest.mark.parametrize("utf_verb", ["(*UTF)", "(*UTF8)"])
+def test_pcre2_utf_accepts_braced_hex_above_8bit_range(utf_verb: str) -> None:
+    pattern = rf"{utf_verb}^\x{{100}}$"
+
+    assert WazuhRegex._normalize_wazuh_pcre2(pattern) == pattern
+    assert WazuhRegex(pattern).pcre2_regex("\u0100")[0] is True
+
+
+@pytest.mark.parametrize(
+    "pattern,text",
+    [
+        (r"(*UTF)(?x)^\x{23}$", "#"),
+        (r"(*UTF)^[\x{5d}]$", "]"),
+        (r"(*UTF)^\\\x{100}$", "\\\u0100"),
+    ],
+)
+def test_pcre2_utf_braced_hex_adaptation_preserves_regex_syntax(
+    pattern: str, text: str,
+) -> None:
+    assert WazuhRegex(pattern).pcre2_regex(text)[0] is True
+
+
 @pytest.mark.parametrize("pattern", [r"\u0041", r"\U"])
 def test_pcre2_rejects_alt_bsux_only_escapes(pattern: str) -> None:
     assert "PCRE2" in WazuhRegex(pattern).validation_errors()
@@ -174,6 +196,11 @@ def test_pcre2_character_classes_use_default_ascii_semantics() -> None:
     assert WazuhRegex(r"^\d+$").pcre2_regex("٣")[0] is False
     assert WazuhRegex(r"^\w+$").pcre2_regex("é")[0] is False
     assert WazuhRegex(r"^\s+$").pcre2_regex("\N{NO-BREAK SPACE}")[0] is False
+
+
+@pytest.mark.parametrize("character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"])
+def test_pcre2_vertical_whitespace_class(character: str) -> None:
+    assert WazuhRegex(r"^\v$").pcre2_regex(character)[0] is True
 
 
 def test_pcre2_explicit_ucp_can_enable_unicode_character_properties() -> None:

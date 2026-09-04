@@ -491,6 +491,14 @@ def test_highlighter_rejects_invalid_span() -> None:
         Highlighter().apply("text", [(0, 5)])
 
 
+def test_highlighter_normalizes_equal_start_overlapping_spans() -> None:
+    highlighter = Highlighter(highlight_color="<")
+
+    assert highlighter.apply("text", [(0, 4), (0, 2)]) == (
+        f"<<t{Highlighter.ENDC}ext{Highlighter.ENDC}"
+    )
+
+
 def test_cli_match_formatters_include_every_match() -> None:
     spans = [(0, 3), (8, 11)]
 
@@ -552,6 +560,30 @@ def test_regex_comparer_uses_wazuh_pcre2_ascii_digit_semantics() -> None:
     converted = comparer.convert(r"\d", Engine.PCRE2, Engine.OSREGEX)
     assert converted.supported is True
     assert converted.pattern == r"\d"
+
+
+@pytest.mark.parametrize("pattern", [r"\v", r"[\v]"])
+def test_regex_comparer_supports_pcre2_vertical_whitespace(pattern: str) -> None:
+    comparer = RegexComparer()
+
+    converted = comparer.convert(pattern, Engine.PCRE2, Engine.PCRE2)
+
+    assert converted.supported is True
+
+
+@pytest.mark.parametrize("character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"])
+def test_regex_comparer_models_the_complete_pcre2_vertical_space_class(
+    character: str,
+) -> None:
+    comparer = RegexComparer()
+
+    assert character in comparer.parse(r"\v", Engine.PCRE2).ast.chars
+
+
+def test_regex_comparer_round_trips_pcre2_whitespace_class() -> None:
+    converted = RegexComparer().convert(r"\s", Engine.PCRE2, Engine.PCRE2)
+
+    assert converted.supported is True
 
 
 def test_osregex_digit_class_converts_to_explicit_ascii_pcre_class() -> None:
