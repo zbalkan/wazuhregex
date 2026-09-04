@@ -349,7 +349,15 @@ class WazuhRegex:
                         else braced_hex.match(pattern, end)
                     )
                     if match is None:
-                        index = end
+                        # An odd run escapes the following character. Consume
+                        # it here so syntax-significant literals such as \#
+                        # and \[ are not reconsidered as a comment or class
+                        # delimiter on the next iteration.
+                        if len(slashes) % 2:
+                            parts.append(marker)
+                            index = end + 1
+                        else:
+                            index = end
                         continue
 
                     value = int(match.group(1), 16)

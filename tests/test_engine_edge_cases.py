@@ -218,6 +218,15 @@ def test_pcre2_utf_extended_hash_in_character_class_is_not_a_comment() -> None:
     assert WazuhRegex(pattern).pcre2_regex("#\u0100")[0] is True
 
 
+@pytest.mark.parametrize("literal", [r"\#", r"\["])
+def test_pcre2_utf_adaptation_preserves_escaped_syntax_in_extended_mode(
+    literal: str,
+) -> None:
+    pattern = rf"(*UTF)(?x)^{literal}\x{{100}}$"
+
+    assert WazuhRegex(pattern).pcre2_regex(literal[1] + "\u0100")[0] is True
+
+
 @pytest.mark.parametrize("pattern", [r"\u0041", r"\U"])
 def test_pcre2_rejects_alt_bsux_only_escapes(pattern: str) -> None:
     assert "PCRE2" in WazuhRegex(pattern).validation_errors()
