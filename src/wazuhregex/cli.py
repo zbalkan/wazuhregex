@@ -3,7 +3,7 @@
 import multiprocessing
 import signal
 import sys
-from multiprocessing.connection import Connection, PipeConnection
+from multiprocessing.connection import Connection
 from multiprocessing.context import SpawnProcess
 
 from rich.console import Console
@@ -159,7 +159,7 @@ def _line_worker(pattern: str, connection: Connection) -> None:
 
 def _start_worker(
     pattern: str,
-) -> tuple[SpawnProcess, PipeConnection, dict[str, str]]:
+) -> tuple[SpawnProcess, Connection, dict[str, str]]:
     """Start one reusable spawn worker and wait until pattern validation is ready."""
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
@@ -178,10 +178,10 @@ def _start_worker(
         process.join()
         parent.close()
         raise RuntimeError("regex worker returned an invalid startup message")
-    return process, parent, payload
+    return process, parent, payload # type: ignore
 
 
-def _stop_worker(process: SpawnProcess, connection: PipeConnection) -> None:
+def _stop_worker(process: SpawnProcess, connection: Connection) -> None:
     """Close a worker without leaving child processes behind."""
     if process.is_alive():
         try:
