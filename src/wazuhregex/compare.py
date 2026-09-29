@@ -8,11 +8,11 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import TypeAlias
+from enum import Enum
+from typing import Union
 
 
-class Engine(StrEnum):
+class Engine(Enum):
     PCRE2 = "pcre2"
     OSREGEX = "osregex"
     SREGEX = "sregex"
@@ -32,12 +32,12 @@ class Engine(StrEnum):
             "pcre2": cls.PCRE2,
         }
         try:
-            return aliases[value.lower()]
+            return aliases[str(value).lower()]
         except KeyError:
             raise ValueError(f"unsupported regex engine: {value!r}") from None
 
 
-class Relation(StrEnum):
+class Relation(Enum):
     EQUIVALENT = "equivalent"
     SUBSET = "subset"
     SUPERSET = "superset"
@@ -46,63 +46,68 @@ class Relation(StrEnum):
     UNKNOWN = "unknown"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Literal:
     value: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CharSet:
     chars: frozenset[str]
     negated: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AnyChar:
     except_newline: bool = True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Sequence:
     items: tuple[Node, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Choice:
     items: tuple[Node, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Repeat:
     item: Node
     minimum: int
     maximum: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Anchor:
     kind: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Unsupported:
     feature: str
     source: str
 
+Node = Union[
+    Literal,
+    CharSet,
+    AnyChar,
+    Sequence,
+    Choice,
+    Repeat,
+    Anchor,
+    Unsupported,
+]
 
-Node: TypeAlias = (
-    Literal | CharSet | AnyChar | Sequence | Choice | Repeat | Anchor | Unsupported
-)
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Pattern:
     source: str
     engine: Engine
     ast: Node
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ComparisonResult:
     relation: Relation
     left: Pattern
@@ -110,7 +115,7 @@ class ComparisonResult:
     reason: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ConversionResult:
     target: Engine
     supported: bool
@@ -118,13 +123,13 @@ class ConversionResult:
     reason: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Alternative:
     engine: Engine
     pattern: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DuplicateGroup:
     fingerprint: str
     members: tuple[Pattern, ...]
