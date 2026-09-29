@@ -8,17 +8,17 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
-from wazuhregex.compare import Engine, RegexComparer
-from wazuhregex.highlighter import Highlighter
-from wazuhregex.wazuh_regex_lib import WazuhRegex
 from wazuhregex.cli import (
     _format_spans,
     _highlight_matches,
+    _line_worker,
     _pattern_header,
     _remove_line_delimiter,
-    _line_worker,
     main,
 )
+from wazuhregex.compare import Engine, RegexComparer
+from wazuhregex.highlighter import Highlighter
+from wazuhregex.wazuh_regex_lib import WazuhRegex
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CLI_ENV = os.environ.copy()
@@ -134,12 +134,16 @@ SUCCESS_REGEX_DATA: list[tuple[str, str]] = [
     (r"^\s+\s l", "     lala"),
     (r"^\s*\s lal\w$", "  lala"),
     (r"test123test\d+$", "test123test123"),
-    (r"^kernel: \S+ \.+ SRC=\S+ DST=\S+ \.+ PROTO=\w+ SPT=\d+ DPT=\d+ ",
-     "kernel: IPTABLE IN=eth0 OUT= MAC=ff:ff:ff:ff:ff:ff:00:03:93:db:2e:b4:08:00 SRC=10.4.11.40 DST=255.255.255.255 LEN=180 TOS=0x00 PREC=0x00 TTL=64 ID=4753 PROTO=UDP SPT=49320 DPT=2222 LEN=160"),
+    (
+        r"^kernel: \S+ \.+ SRC=\S+ DST=\S+ \.+ PROTO=\w+ SPT=\d+ DPT=\d+ ",
+        "kernel: IPTABLE IN=eth0 OUT= MAC=ff:ff:ff:ff:ff:ff:00:03:93:db:2e:b4:08:00 SRC=10.4.11.40 DST=255.255.255.255 LEN=180 TOS=0x00 PREC=0x00 TTL=64 ID=4753 PROTO=UDP SPT=49320 DPT=2222 LEN=160",
+    ),
     (r"test (\w+)la", "test abclala"),
     (r"(\w+) (\w+)", "wofl wofl"),
-    (r"^\S+ [(\d+:\d+:\d+)] \.+ (\d+.\d+.\d+.\d+)\p*\d* -> (\d+.\d+.\d+.\d+)\p*",
-     "snort: [1:469:3] ICMP PING NMAP [Classification: Attempted Information Leak] [Priority: 2]: {ICMP} 10.4.12.26 -> 10.4.10.231"),
+    (
+        r"^\S+ [(\d+:\d+:\d+)] \.+ (\d+.\d+.\d+.\d+)\p*\d* -> (\d+.\d+.\d+.\d+)\p*",
+        "snort: [1:469:3] ICMP PING NMAP [Classification: Attempted Information Leak] [Priority: 2]: {ICMP} 10.4.12.26 -> 10.4.10.231",
+    ),
     (r"^\t 1234", "\t 1234"),
     (r"^abc\$d", "abc$d"),
     (r"^abc\|d", "abc|d"),
@@ -185,12 +189,21 @@ EXTRACTION_DATA: list[tuple[str, str, list[str]]] = [
     (r"123(\w+\s+)abc", "123sdf    abc", ["sdf    "]),
     (r"123(\w+\s+)abc", "abc123sdf    abc", ["sdf    "]),
     (r"123 (\d+.\d.\d.\d\d*\d*)", "123 45.6.5.567", ["45.6.5.567"]),
-    (r"from (\S*\d+.\d+.\d+.\d\d*\d*)",
-     "sshd[21576]: Illegal user web14 from ::ffff:212.227.60.55", ["::ffff:212.227.60.55"]),
-    (r"^sshd[\d+]: Accepted \S+ for (\S+) from (\S+) port ",
-     "sshd[21405]: Accepted password for root from 192.1.1.1 port 6023", ["root", "192.1.1.1"]),
-    (r": \((\S+)@(\S+)\) [", "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
-     ["?", "enigma.lab.ossec.net"]),
+    (
+        r"from (\S*\d+.\d+.\d+.\d\d*\d*)",
+        "sshd[21576]: Illegal user web14 from ::ffff:212.227.60.55",
+        ["::ffff:212.227.60.55"],
+    ),
+    (
+        r"^sshd[\d+]: Accepted \S+ for (\S+) from (\S+) port ",
+        "sshd[21405]: Accepted password for root from 192.1.1.1 port 6023",
+        ["root", "192.1.1.1"],
+    ),
+    (
+        r": \((\S+)@(\S+)\) [",
+        "pure-ftpd: (?@enigma.lab.ossec.net) [INFO] New connection from enigma.lab.ossec.net",
+        ["?", "enigma.lab.ossec.net"],
+    ),
 ]
 
 
@@ -223,7 +236,9 @@ def test_osregex_fail(pattern: str, text: str) -> None:
 
 
 @pytest.mark.parametrize("pattern, text, expected_substrings", EXTRACTION_DATA)
-def test_osregex_extraction(pattern: str, text: str, expected_substrings: list[str]) -> None:
+def test_osregex_extraction(
+    pattern: str, text: str, expected_substrings: list[str]
+) -> None:
     """Replicates test_regex_extraction from the C tests."""
     tool = WazuhRegex(pattern)
     is_match, _ = tool.os_regex(text)
@@ -416,7 +431,9 @@ def test_pattern_preserves_double_quotes_as_literals() -> None:
 
 
 @pytest.mark.parametrize("metacharacter", list(".?[]{}"))
-def test_osregex_treats_pcre_only_metacharacters_as_literals(metacharacter: str) -> None:
+def test_osregex_treats_pcre_only_metacharacters_as_literals(
+    metacharacter: str,
+) -> None:
     assert WazuhRegex(metacharacter).os_regex(metacharacter)[0] is True
     assert WazuhRegex(metacharacter).os_regex("unrelated")[0] is False
 
@@ -473,7 +490,7 @@ def test_osmatch_unicode_input_keeps_original_span_offsets() -> None:
     assert WazuhRegex("event").os_match("\u0130EVENT") == (True, [(1, 6)])
 
 
-@pytest.mark.parametrize("character", list(r'''-()*+,.:;<=>?[]!"'#$%&|{}'''))
+@pytest.mark.parametrize("character", list(r"""-()*+,.:;<=>?[]!"'#$%&|{}"""))
 def test_osregex_punctuation_class(character: str) -> None:
     assert WazuhRegex(r"\p").os_regex(character)[0] is True
 
@@ -481,9 +498,7 @@ def test_osregex_punctuation_class(character: str) -> None:
 def test_highlighter_applies_every_span() -> None:
     highlighter = Highlighter(highlight_color="<")
 
-    assert highlighter.apply("one two", [(0, 3), (4, 7)]) == (
-        "<one\033[0m <two\033[0m"
-    )
+    assert highlighter.apply("one two", [(0, 3), (4, 7)]) == ("<one\033[0m <two\033[0m")
 
 
 def test_highlighter_rejects_invalid_span() -> None:
@@ -541,53 +556,57 @@ def test_regex_comparer_does_not_claim_case_sensitive_literal_is_equivalent() ->
     pcre = comparer.parse("^event$", Engine.PCRE2)
     osregex = comparer.parse("^event$", Engine.OSREGEX)
 
-    assert comparer.compare(pcre, osregex).relation.value == "unknown"
+    assert comparer.compare(pcre, right=osregex).relation.value == "unknown"
     assert comparer.convert(pcre, target=Engine.OSREGEX).supported is False
     assert comparer.convert(osregex, target=Engine.PCRE2).supported is False
 
 
 def test_osregex_punctuation_class_does_not_include_space_in_conversion() -> None:
-    converted = RegexComparer().convert(r"\p", Engine.OSREGEX, Engine.PCRE2)
+    converted = RegexComparer().convert(r"\p", Engine.OSREGEX, Engine.PCRE2)  # type: ignore
 
     assert converted.supported is True
-    assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False
+    assert WazuhRegex(converted.pattern).pcre2_regex(" ")[0] is False  # type: ignore
 
 
 def test_regex_comparer_uses_wazuh_pcre2_ascii_digit_semantics() -> None:
     comparer = RegexComparer()
 
     assert WazuhRegex(r"\d").pcre2_regex("٣")[0] is False
-    converted = comparer.convert(r"\d", Engine.PCRE2, Engine.OSREGEX)
+    converted = comparer.convert(r"\d", Engine.PCRE2, Engine.OSREGEX)  # type: ignore
     assert converted.supported is True
     assert converted.pattern == r"\d"
 
 
 def test_regex_comparer_expands_ranges_with_escaped_endpoints() -> None:
     converted = RegexComparer().convert(
-        r"^[\x41-\x5a]$", Engine.PCRE2, Engine.PCRE2,
+        r"^[\x41-\x5a]$",
+        Engine.PCRE2,
+        Engine.PCRE2,  # type: ignore
     )
 
     assert converted.supported is True
-    assert WazuhRegex(converted.pattern).pcre2_regex("M")[0] is True
-    assert WazuhRegex(converted.pattern).pcre2_regex("-")[0] is False
+    assert WazuhRegex(converted.pattern).pcre2_regex("M")[0] is True  # type: ignore
+    assert WazuhRegex(converted.pattern).pcre2_regex("-")[0] is False  # type: ignore
 
 
 @pytest.mark.parametrize("pattern", [r"\v", r"[\v]"])
 def test_regex_comparer_supports_pcre2_vertical_whitespace(pattern: str) -> None:
     comparer = RegexComparer()
 
-    converted = comparer.convert(pattern, Engine.PCRE2, Engine.PCRE2)
+    converted = comparer.convert(pattern, Engine.PCRE2, Engine.PCRE2)  # type: ignore
 
     assert converted.supported is True
 
 
-@pytest.mark.parametrize("character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"])
+@pytest.mark.parametrize(
+    "character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"]
+)
 def test_regex_comparer_models_the_complete_pcre2_vertical_space_class(
     character: str,
 ) -> None:
     comparer = RegexComparer()
 
-    assert character in comparer.parse(r"\v", Engine.PCRE2).ast.chars
+    assert character in comparer.parse(r"\v", Engine.PCRE2).ast.chars  # type: ignore
 
 
 def test_regex_comparer_round_trips_pcre2_whitespace_class() -> None:
@@ -668,9 +687,7 @@ def test_literal_pattern_header_has_no_original_engine() -> None:
 
     assert "(orig.)" not in output
     assert [cell for cell in table.columns[1].cells] == ["zafer"] * 3
-    assert [cell for cell in table.columns[2].cells] == [
-        "[dim]Literal[/dim]"
-    ] * 3
+    assert [cell for cell in table.columns[2].cells] == ["[dim]Literal[/dim]"] * 3
 
 
 def test_pattern_header_places_conversion_warning_in_remarks_column() -> None:
@@ -835,6 +852,7 @@ def test_public_package_api() -> None:
 
 def test_cli_handles_keyboard_interrupt(monkeypatch, capsys) -> None:
     """The installed console entry point exits cleanly when stdin is interrupted."""
+
     class InterruptedInput:
         def __iter__(self):
             raise KeyboardInterrupt
@@ -868,6 +886,6 @@ def test_line_worker_ignores_keyboard_interrupt(monkeypatch) -> None:
         ),
     )
 
-    _line_worker("test", InterruptedConnection())
+    _line_worker("test", InterruptedConnection())  # type: ignore
 
     assert installed_handlers == [(signal.SIGINT, signal.SIG_IGN)]

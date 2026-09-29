@@ -14,7 +14,7 @@ def test_compiled_regex_patterns_are_reused(monkeypatch) -> None:
     real_compile = pcre2.compile
     calls: list[str] = []
 
-    def counting_compile(pattern, *args, **kwargs):
+    def counting_compile(pattern, *args, **kwargs) -> pcre2.Pattern:
         calls.append(pattern)
         return real_compile(pattern, *args, **kwargs)
 
@@ -37,7 +37,7 @@ def test_compile_failures_are_cached(monkeypatch) -> None:
     real_compile = pcre2.compile
     calls = 0
 
-    def counting_compile(pattern, *args, **kwargs):
+    def counting_compile(pattern, *args, **kwargs) -> pcre2.Pattern:
         nonlocal calls
         calls += 1
         return real_compile(pattern, *args, **kwargs)

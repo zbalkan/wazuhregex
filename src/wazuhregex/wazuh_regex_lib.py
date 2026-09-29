@@ -14,28 +14,28 @@ class WazuhRegex:
     """
 
     _TRANSLATIONS: Final[dict[str, str]] = {
-        r'\\': r'\\',
-        r'\D': r'[^0-9]',
-        r'\W': r'[^a-zA-Z0-9_@\-]',
-        r'\S': r'[^ ]',
-        r'\d': r'[0-9]',
-        r'\w': r'[a-zA-Z0-9_@\-]',
-        r'\s': r'[ ]',
-        r'\t': r'\t',
+        r"\\": r"\\",
+        r"\D": r"[^0-9]",
+        r"\W": r"[^a-zA-Z0-9_@\-]",
+        r"\S": r"[^ ]",
+        r"\d": r"[0-9]",
+        r"\w": r"[a-zA-Z0-9_@\-]",
+        r"\s": r"[ ]",
+        r"\t": r"\t",
         # Wazuh's punctuation class does not contain backslash.
-        r'\p': r'''[\-()*+,.:;<=>?\[\]!"'#$%&|{}]''',
+        r"\p": r"""[\-()*+,.:;<=>?\[\]!"'#$%&|{}]""",
         # OS_Regex uses an escaped dot for its any-character operator. Wazuh's
         # character map accepts every byte, including newline, so use a scoped
         # DOTALL group instead of PCRE2's default dot behaviour.
-        r'\.': r'(?s:.)',
+        r"\.": r"(?s:.)",
     }
     _OSREGEX_LITERAL_ESCAPES: Final[frozenset[str]] = frozenset("()$|<")
 
     # These characters have no special meaning in OS_Regex, but do have one
     # in the PCRE2 backend used for the emulation. Escape them when they occur
     # unescaped so that the backend cannot accidentally accept PCRE syntax.
-    _PCRE_ONLY_METACHARACTERS: Final[frozenset[str]] = frozenset('.?[]{}')
-    _PCRE_METACHARACTERS: Final[frozenset[str]] = frozenset(r'\\.^$|?*+()[]{}')
+    _PCRE_ONLY_METACHARACTERS: Final[frozenset[str]] = frozenset(".?[]{}")
+    _PCRE_METACHARACTERS: Final[frozenset[str]] = frozenset(r"\\.^$|?*+()[]{}")
     _ASCII_LOWERCASE_TRANSLATION: Final[dict[int, int]] = str.maketrans(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
     )
@@ -72,19 +72,19 @@ class WazuhRegex:
             if escaped:
                 escaped = False
                 continue
-            if character == '\\':
+            if character == "\\":
                 escaped = True
                 continue
-            if character == '(':
+            if character == "(":
                 group_depth += 1
                 if group_depth > 1:
                     has_invalid_nesting = True
-            elif character == ')':
+            elif character == ")":
                 group_depth -= 1
                 if group_depth < 0:
                     has_invalid_nesting = True
                     group_depth = 0
-            elif character == '|' and group_depth:
+            elif character == "|" and group_depth:
                 has_group_alternation = True
 
         if group_depth != 0:
@@ -106,7 +106,7 @@ class WazuhRegex:
             translation_parts: list[str] = []
             index = 0
             while index < len(self._raw_pattern):
-                token = self._raw_pattern[index:index + 2]
+                token = self._raw_pattern[index : index + 2]
                 replacement = self._TRANSLATIONS.get(token)
                 if replacement is None:
                     character = self._raw_pattern[index]
@@ -114,31 +114,36 @@ class WazuhRegex:
                         raise ValueError(
                             "Invalid for OS_Regex: Modifier on bare character."
                         )
-                    if character == '\\':
+                    if character == "\\":
                         if len(token) != 2:
-                            raise ValueError("Invalid for OS_Regex: Trailing backslash.")
+                            raise ValueError(
+                                "Invalid for OS_Regex: Trailing backslash."
+                            )
                         quoted = token[1]
                         if quoted not in self._OSREGEX_LITERAL_ESCAPES:
                             raise ValueError(
                                 f"Invalid for OS_Regex: Unsupported escape \\{quoted}."
                             )
                         if quoted in self._PCRE_METACHARACTERS:
-                            translation_parts.append('\\')
+                            translation_parts.append("\\")
                         translation_parts.append(quoted)
                         index += 2
                         continue
                     if character in self._PCRE_ONLY_METACHARACTERS:
-                        translation_parts.append('\\')
+                        translation_parts.append("\\")
                     translation_parts.append(character)
                     index += 1
                 else:
                     translation_parts.append(replacement)
                     index += 2
-                    if index < len(self._raw_pattern) and self._raw_pattern[index] in "*+":
+                    if (
+                        index < len(self._raw_pattern)
+                        and self._raw_pattern[index] in "*+"
+                    ):
                         translation_parts.append(self._raw_pattern[index])
                         index += 1
 
-            translation = ''.join(translation_parts).translate(
+            translation = "".join(translation_parts).translate(
                 self._ASCII_LOWERCASE_TRANSLATION
             )
             try:
@@ -165,38 +170,38 @@ class WazuhRegex:
         utf_enabled = pattern.startswith(("(*UTF)", "(*UTF8)"))
         index = 0
         while index < len(pattern):
-            if pattern[index] != '\\':
+            if pattern[index] != "\\":
                 parts.append(pattern[index])
                 index += 1
                 continue
 
             if index + 1 >= len(pattern):
-                parts.append('\\')
+                parts.append("\\")
                 index += 1
                 continue
 
             escaped = pattern[index + 1]
-            if escaped == '\\':
-                parts.append('\\\\')
+            if escaped == "\\":
+                parts.append("\\\\")
                 index += 2
                 continue
 
             # PCRE2 without ALT_BSUX rejects \u and \U. The Python wrapper
             # enables them, so reject them before compilation.
-            if escaped in {'u', 'U'}:
+            if escaped in {"u", "U"}:
                 raise ValueError(
                     f"Invalid for Wazuh PCRE2: unsupported escape \\{escaped}."
                 )
 
-            if escaped == 'x':
-                if index + 2 < len(pattern) and pattern[index + 2] == '{':
-                    end = pattern.find('}', index + 3)
+            if escaped == "x":
+                if index + 2 < len(pattern) and pattern[index + 2] == "{":
+                    end = pattern.find("}", index + 3)
                     if end < 0:
                         parts.append(pattern[index:])
                         break
-                    digits = pattern[index + 3:end]
+                    digits = pattern[index + 3 : end]
                     if not digits or any(ch not in cls._HEX_DIGITS for ch in digits):
-                        parts.append(pattern[index:end + 1])
+                        parts.append(pattern[index : end + 1])
                         index = end + 1
                         continue
                     value = int(digits, 16)
@@ -205,7 +210,7 @@ class WazuhRegex:
                             "Invalid for Wazuh PCRE2: braced hex value exceeds 8-bit range."
                         )
                     if utf_enabled:
-                        parts.append(pattern[index:end + 1])
+                        parts.append(pattern[index : end + 1])
                     else:
                         parts.append(f"\\x{value:02x}")
                     index = end + 1
@@ -213,10 +218,10 @@ class WazuhRegex:
 
                 # With Wazuh's normal PCRE2 options, \x consumes zero, one, or
                 # two hexadecimal digits. ALT_BSUX requires exactly two.
-                first = pattern[index + 2] if index + 2 < len(pattern) else ''
-                second = pattern[index + 3] if index + 3 < len(pattern) else ''
+                first = pattern[index + 2] if index + 2 < len(pattern) else ""
+                second = pattern[index + 3] if index + 3 < len(pattern) else ""
                 if first in cls._HEX_DIGITS and second in cls._HEX_DIGITS:
-                    parts.append(pattern[index:index + 4])
+                    parts.append(pattern[index : index + 4])
                     index += 4
                 elif first in cls._HEX_DIGITS:
                     parts.append(f"\\x0{first}")
@@ -229,15 +234,15 @@ class WazuhRegex:
             # pcre2.py always sets PCRE2_NEVER_BACKSLASH_C. In Wazuh's
             # non-UTF 8-bit default, \C means one code unit; for the string API
             # the closest equivalent is one character including newline.
-            if escaped == 'C':
+            if escaped == "C":
                 parts.append(r"(?s:.)")
                 index += 2
                 continue
 
-            parts.append(pattern[index:index + 2])
+            parts.append(pattern[index : index + 2])
             index += 2
 
-        return ''.join(parts)
+        return "".join(parts)
 
     def _pcre2_compile(self) -> pcre2.Pattern:
         if self._pcre2_compiled is not None:
@@ -262,9 +267,7 @@ class WazuhRegex:
                 # when their closing parenthesis is reached.
                 group_extended: list[bool] = []
                 braced_hex = re.compile(r"x\{([0-9a-fA-F]+)\}")
-                option_group = re.compile(
-                    r"\(\?([a-zA-Z]*)(?:-([a-zA-Z]*))?([:)])"
-                )
+                option_group = re.compile(r"\(\?([a-zA-Z]*)(?:-([a-zA-Z]*))?([:)])")
                 while index < len(pattern):
                     # PCRE2 ignores both (?#...) comments and, in extended
                     # mode, text from an unescaped # through the line ending.
@@ -292,11 +295,7 @@ class WazuhRegex:
                         index = end
                         continue
 
-                    if (
-                        not quoted
-                        and not in_character_class
-                        and pattern[index] == "("
-                    ):
+                    if not quoted and not in_character_class and pattern[index] == "(":
                         options = option_group.match(pattern, index)
                         if options is not None:
                             enabled, disabled, terminator = options.groups()
@@ -334,7 +333,7 @@ class WazuhRegex:
                     while end < len(pattern) and pattern[end] == "\\":
                         end += 1
                     slashes = pattern[index:end]
-                    marker = pattern[end:end + 1]
+                    marker = pattern[end : end + 1]
                     parts.append(slashes)
 
                     if len(slashes) % 2 and marker == ("E" if quoted else "Q"):
@@ -394,7 +393,7 @@ class WazuhRegex:
         """Emulates the OSRegex_Execute engine."""
         self._last_substrings = []
         self._validate_text(text)
-        if self._raw_pattern in ('$', '^$'):
+        if self._raw_pattern in ("$", "^$"):
             return (True, [(0, 0)]) if text == "" else (False, [])
 
         try:
@@ -402,9 +401,9 @@ class WazuhRegex:
         except ValueError:
             return False, []
 
-        matches = list(compiled.finditer(
-            text.translate(self._ASCII_LOWERCASE_TRANSLATION)
-        ))
+        matches = list(
+            compiled.finditer(text.translate(self._ASCII_LOWERCASE_TRANSLATION))
+        )
         if not matches:
             return False, []
 
@@ -446,12 +445,12 @@ class WazuhRegex:
 
         os_match_compiled: list[tuple[str, str, bool]] = []
         pattern = self._raw_pattern
-        is_negated = pattern.startswith('!')
+        is_negated = pattern.startswith("!")
         if is_negated:
             pattern = pattern[1:]
 
-        for sub in pattern.split('|'):
-            is_start, is_end = sub.startswith('^'), sub.endswith('$')
+        for sub in pattern.split("|"):
+            is_start, is_end = sub.startswith("^"), sub.endswith("$")
             start_index = 1 if is_start else 0
             end_index = -1 if is_end else None
             clean_sub = sub[start_index:end_index].translate(

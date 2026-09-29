@@ -2,9 +2,10 @@ class Highlighter:
     """
     A class responsible for formatting text with ANSI color codes.
     """
+
     # Class-level constants for colors
-    RED = '\033[91m'
-    ENDC = '\033[0m'
+    RED = "\033[91m"
+    ENDC = "\033[0m"
 
     def __init__(self, highlight_color: str = RED) -> None:
         """
@@ -57,7 +58,7 @@ class Highlighter:
             highlighted = text
             # The legacy implementation sorted complete (start, end) tuples.
             # Equal-start spans therefore also need end-order normalization.
-            for start, end in reversed(sorted(ordered)):
+            for start, end in sorted(ordered, reverse=True):
                 highlighted = (
                     f"{highlighted[:start]}{self.highlight_color}"
                     f"{highlighted[start:end]}{self.ENDC}{highlighted[end:]}"
@@ -76,4 +77,4 @@ class Highlighter:
             pieces.append(self.ENDC)
             cursor = end
         pieces.append(text[cursor:])
-        return ''.join(pieces)
+        return "".join(pieces)

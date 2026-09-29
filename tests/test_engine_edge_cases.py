@@ -9,7 +9,6 @@ import pytest
 
 from wazuhregex import WazuhRegex
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CLI_ENV = os.environ.copy()
 CLI_ENV["PYTHONPATH"] = os.pathsep.join(
@@ -58,7 +57,9 @@ def test_osregex_space_class_rejects_other_whitespace() -> None:
 
 
 @pytest.mark.parametrize("character", ["-", "@", "_"])
-def test_osregex_word_class_includes_wazuh_extra_word_characters(character: str) -> None:
+def test_osregex_word_class_includes_wazuh_extra_word_characters(
+    character: str,
+) -> None:
     assert WazuhRegex(r"^\w$").os_regex(character)[0] is True
 
 
@@ -182,7 +183,8 @@ def test_pcre2_utf_accepts_braced_hex_above_8bit_range(utf_verb: str) -> None:
     ],
 )
 def test_pcre2_utf_braced_hex_adaptation_preserves_regex_syntax(
-    pattern: str, text: str,
+    pattern: str,
+    text: str,
 ) -> None:
     assert WazuhRegex(pattern).pcre2_regex(text)[0] is True
 
@@ -238,7 +240,9 @@ def test_pcre2_character_classes_use_default_ascii_semantics() -> None:
     assert WazuhRegex(r"^\s+$").pcre2_regex("\N{NO-BREAK SPACE}")[0] is False
 
 
-@pytest.mark.parametrize("character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"])
+@pytest.mark.parametrize(
+    "character", ["\n", "\v", "\f", "\r", "\x85", "\u2028", "\u2029"]
+)
 def test_pcre2_vertical_whitespace_class(character: str) -> None:
     assert WazuhRegex(r"^\v$").pcre2_regex(character)[0] is True
 

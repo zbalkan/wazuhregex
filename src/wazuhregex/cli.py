@@ -3,7 +3,8 @@
 import multiprocessing
 import signal
 import sys
-from multiprocessing.connection import Connection
+from multiprocessing.connection import Connection, PipeConnection
+from multiprocessing.context import SpawnProcess
 
 from rich.console import Console
 from rich.markup import escape
@@ -15,7 +16,6 @@ from .compare import Engine, RegexComparer
 from .highlighter import Highlighter
 from .wazuh_regex_lib import WazuhRegex
 
-
 LINE_TIMEOUT_SECONDS = 0.1
 MAX_INPUT_LINES = 20
 
@@ -24,7 +24,7 @@ def _remove_line_delimiter(line: str) -> str:
     """Remove one newline delimiter without discarding record content."""
     if line.endswith("\n"):
         line = line[:-1]
-        if line.endswith("\r"):
+        if line.endswith("\r"):  # noqa: FURB188
             line = line[:-1]
     return line
 
@@ -66,14 +66,15 @@ def _pattern_header(pattern: str) -> Table:
         try:
             source = comparer.parse(pattern, original_engine)
             patterns.update(
-                {alternative.engine: alternative.pattern
-                 for alternative in comparer.alternatives(source)}
+                {
+                    alternative.engine: alternative.pattern
+                    for alternative in comparer.alternatives(source)
+                }
             )
         except ValueError:
             pass
 
-    table = Table(title="Wazuh Regex Tester", show_header=True,
-                  header_style="bold")
+    table = Table(title="Wazuh Regex Tester", show_header=True, header_style="bold")
     table.add_column("engine", style="cyan", width=20)
     table.add_column("Equivalent pattern")
     table.add_column("Remarks")
@@ -144,10 +145,10 @@ def _line_worker(pattern: str, connection: Connection) -> None:
                 connection.send(
                     ("result", _evaluate_line(tool, text, validation_errors))
                 )
-            except Exception as error:  # pragma: no cover - defensive worker boundary
-                connection.send(
-                    ("error", f"{type(error).__name__}: {error}")
-                )
+            except (
+                Exception  # noqa: BLE001
+            ) as error:  # pragma: no cover - defensive worker boundary
+                connection.send(("error", f"{type(error).__name__}: {error}"))
     except (EOFError, KeyboardInterrupt):
         # The explicit KeyboardInterrupt guard also keeps shutdown quiet if an
         # interrupt arrives before the platform has applied the ignored signal.
@@ -158,7 +159,7 @@ def _line_worker(pattern: str, connection: Connection) -> None:
 
 def _start_worker(
     pattern: str,
-) -> tuple[multiprocessing.Process, Connection, dict[str, str]]:
+) -> tuple[SpawnProcess, PipeConnection, dict[str, str]]:
     """Start one reusable spawn worker and wait until pattern validation is ready."""
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
@@ -180,7 +181,7 @@ def _start_worker(
     return process, parent, payload
 
 
-def _stop_worker(process: multiprocessing.Process, connection: Connection) -> None:
+def _stop_worker(process: SpawnProcess, connection: PipeConnection) -> None:
     """Close a worker without leaving child processes behind."""
     if process.is_alive():
         try:
@@ -195,8 +196,9 @@ def _stop_worker(process: multiprocessing.Process, connection: Connection) -> No
 
 
 def _render_timeout(console: Console, text: str) -> None:
-    table = Table(title=f"Testing: {escape(text)}",
-                  show_header=True, header_style="bold")
+    table = Table(
+        title=f"Testing: {escape(text)}", show_header=True, header_style="bold"
+    )
     table.add_column("Engine", style="cyan")
     table.add_column("Result", justify="center")
     table.add_column("Match / Span")
@@ -217,8 +219,9 @@ def _render_results(
         tuple[bool, list[tuple[int, int]], list[str]],
     ],
 ) -> None:
-    table = Table(title=f"Testing: {escape(text)}",
-                  show_header=True, header_style="bold")
+    table = Table(
+        title=f"Testing: {escape(text)}", show_header=True, header_style="bold"
+    )
     table.add_column("Engine", style="cyan")
     table.add_column("Result", justify="center")
     table.add_column("Match / Span")

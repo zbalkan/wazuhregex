@@ -108,7 +108,7 @@ tool = WazuhRegex(r"(\d+)")
 
 is_match, spans = tool.os_regex("30 Agustos 2020")
 if is_match:
-    print(spans)                  # [(0, 2), (11, 15)]
+    print(spans)  # [(0, 2), (11, 15)]
     print(tool.get_substrings())  # ["30", "2020"]
 
 is_match, spans = tool.os_match("Error: disk full")

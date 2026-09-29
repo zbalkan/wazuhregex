@@ -1,13 +1,15 @@
 """Conservative semantic comparison and conversion for Wazuh regex engines."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import re
 from collections import defaultdict
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Iterable, Iterator, TypeAlias
+from typing import TypeAlias
 
 
 class Engine(StrEnum):
@@ -16,13 +18,19 @@ class Engine(StrEnum):
     SREGEX = "sregex"
 
     @classmethod
-    def coerce(cls, value: "Engine | str") -> "Engine":
+    def coerce(cls, value: Engine | str) -> Engine:
         if isinstance(value, cls):
             return value
-        aliases = {"regex": cls.OSREGEX, "os_regex": cls.OSREGEX,
-                   "osregex": cls.OSREGEX, "osmatch": cls.SREGEX,
-                   "os_match": cls.SREGEX, "sregex": cls.SREGEX,
-                   "pcre": cls.PCRE2, "pcre2": cls.PCRE2}
+        aliases = {
+            "regex": cls.OSREGEX,
+            "os_regex": cls.OSREGEX,
+            "osregex": cls.OSREGEX,
+            "osmatch": cls.SREGEX,
+            "os_match": cls.SREGEX,
+            "sregex": cls.SREGEX,
+            "pcre": cls.PCRE2,
+            "pcre2": cls.PCRE2,
+        }
         try:
             return aliases[value.lower()]
         except KeyError:
@@ -56,17 +64,17 @@ class AnyChar:
 
 @dataclass(frozen=True, slots=True)
 class Sequence:
-    items: tuple["Node", ...]
+    items: tuple[Node, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class Choice:
-    items: tuple["Node", ...]
+    items: tuple[Node, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class Repeat:
-    item: "Node"
+    item: Node
     minimum: int
     maximum: int | None
 
@@ -82,7 +90,9 @@ class Unsupported:
     source: str
 
 
-Node: TypeAlias = Literal | CharSet | AnyChar | Sequence | Choice | Repeat | Anchor | Unsupported
+Node: TypeAlias = (
+    Literal | CharSet | AnyChar | Sequence | Choice | Repeat | Anchor | Unsupported
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,14 +130,18 @@ class DuplicateGroup:
     members: tuple[Pattern, ...]
 
 
-_WORD_OS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-@_")
+_WORD_OS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-@_"
+)
 _DIGITS = frozenset("0123456789")
 _SPACE = frozenset(" ")
 _TAB = frozenset("\t")
 _PUNCT_OS = frozenset("()*+,-.:;<=>?[]!\"'#$%&|{}")
 _PCRE_SPACE = frozenset("\t\n\v\f\r ")
 _PCRE_VERTICAL_SPACE = frozenset("\n\v\f\r\x85\u2028\u2029")
-_ASCII_WORD = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+_ASCII_WORD = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+)
 _OSREGEX_LITERAL_ESCAPES = frozenset("()$|<\\")
 
 
@@ -163,7 +177,13 @@ def _split(source: str) -> list[str]:
 
 def _seq(items: list[Node] | tuple[Node, ...]) -> Node:
     values = tuple(items)
-    return Sequence(()) if not values else values[0] if len(values) == 1 else Sequence(values)
+    return (
+        Sequence(())
+        if not values
+        else values[0]
+        if len(values) == 1
+        else Sequence(values)
+    )
 
 
 def _matching(source: str, start: int, opening="(", closing=")") -> int | None:
@@ -225,9 +245,17 @@ def _parse_osregex(source: str) -> Node:
     branches: list[str] = _split(source)
     if len(branches) > 1:
         return Choice(tuple(_parse_osregex(x) for x in branches))
-    mapping = {"w": CharSet(_WORD_OS), "d": CharSet(_DIGITS), "s": CharSet(_SPACE),
-               "t": CharSet(_TAB), "p": CharSet(_PUNCT_OS), "W": CharSet(_WORD_OS, True),
-               "D": CharSet(_DIGITS, True), "S": CharSet(_SPACE, True), ".": AnyChar(False)}
+    mapping = {
+        "w": CharSet(_WORD_OS),
+        "d": CharSet(_DIGITS),
+        "s": CharSet(_SPACE),
+        "t": CharSet(_TAB),
+        "p": CharSet(_PUNCT_OS),
+        "W": CharSet(_WORD_OS, True),
+        "D": CharSet(_DIGITS, True),
+        "S": CharSet(_SPACE, True),
+        ".": AnyChar(False),
+    }
     items: list[Node] = []
     literal: list[str] = []
     i = 0
@@ -243,15 +271,15 @@ def _parse_osregex(source: str) -> Node:
             flush()
             items.append(Anchor("start"))
             i += 1
-        elif ch == "$" and i == len(source)-1:
+        elif ch == "$" and i == len(source) - 1:
             flush()
             items.append(Anchor("end"))
             i += 1
         elif ch == "\\":
             flush()
-            if i+1 >= len(source):
+            if i + 1 >= len(source):
                 raise RegexSyntaxError("trailing backslash")
-            escaped = source[i+1]
+            escaped = source[i + 1]
             if escaped in mapping:
                 node = mapping[escaped]
             elif escaped in _OSREGEX_LITERAL_ESCAPES:
@@ -260,9 +288,9 @@ def _parse_osregex(source: str) -> Node:
                 return Unsupported("osregex-invalid-escape", source)
             i += 2
             if i < len(source) and source[i] in "*+":
-                node = Repeat(node, 0 if source[i] == "*" else 1, None)
+                node = Repeat(node, 0 if source[i] == "*" else 1, None)  # type: ignore[arg-type]
                 i += 1
-            items.append(node)
+            items.append(node)  # type: ignore[arg-type]
         elif ch in "*+":
             return Unsupported("osregex-bare-quantifier", source)
         elif ch == "(":
@@ -270,7 +298,7 @@ def _parse_osregex(source: str) -> Node:
             end = _matching(source, i)
             if end is None:
                 raise RegexSyntaxError("unbalanced parenthesis")
-            inner = source[i+1:end]
+            inner = source[i + 1 : end]
             if _contains_unescaped(inner, "("):
                 return Unsupported("osregex-nested-group", source)
             if len(_split(inner)) > 1:
@@ -288,25 +316,25 @@ def _quant(node: Node, source: str, i: int) -> tuple[Node, int]:
     if i >= len(source) or source[i] not in "*+?{":
         return node, i
     if source[i] == "*":
-        return Repeat(node, 0, None), i+1
+        return Repeat(node, 0, None), i + 1
     if source[i] == "+":
-        return Repeat(node, 1, None), i+1
+        return Repeat(node, 1, None), i + 1
     if source[i] == "?":
-        return Repeat(node, 0, 1), i+1
-    end = source.find("}", i+1)
+        return Repeat(node, 0, 1), i + 1
+    end = source.find("}", i + 1)
     if end < 0:
         raise RegexSyntaxError("unterminated bounded quantifier")
-    spec = source[i+1:end]
+    spec = source[i + 1 : end]
     try:
         if "," not in spec:
             minimum = maximum = int(spec)
         else:
             left, right = spec.split(",", 1)
             minimum = int(left)
-            maximum: int | None = int(right) if right else None
+            maximum: int | None = int(right) if right else None  # type: ignore[no-redef]
     except ValueError:
-        return Unsupported("pcre2-invalid-quantifier", source), end+1
-    return Repeat(node, minimum, maximum), end+1
+        return Unsupported("pcre2-invalid-quantifier", source), end + 1
+    return Repeat(node, minimum, maximum), end + 1
 
 
 def _parse_class(body: str) -> Node:
@@ -318,12 +346,17 @@ def _parse_class(body: str) -> Node:
     classes["v"] = _PCRE_VERTICAL_SPACE
     escaped_characters = {"t": "\t", "r": "\r", "n": "\n", "f": "\f"}
     while i < len(body):
-        if body[i] == "\\" and i+1 < len(body):
-            escaped = body[i+1]
-            if (escaped == "x" and i+3 < len(body)
-                    and all(character in "0123456789abcdefABCDEF"
-                            for character in body[i+2:i+4])):
-                atoms.append((frozenset((chr(int(body[i+2:i+4], 16)),)), False))
+        if body[i] == "\\" and i + 1 < len(body):
+            escaped = body[i + 1]
+            if (
+                escaped == "x"
+                and i + 3 < len(body)
+                and all(
+                    character in "0123456789abcdefABCDEF"
+                    for character in body[i + 2 : i + 4]
+                )
+            ):
+                atoms.append((frozenset((chr(int(body[i + 2 : i + 4], 16)),)), False))
                 i += 4
                 continue
             if escaped in classes:
@@ -358,11 +391,15 @@ def _parse_class(body: str) -> Node:
 
 
 def _parse_pcre2(source: str) -> Node:
-    advanced = [(r"\\[1-9]", "backreference"), (r"\(\?<([=!])", "lookbehind"),
-                (r"\(\?[=!]", "lookahead"), (r"\(\?>", "atomic-group")]
+    advanced = [
+        (r"\\[1-9]", "backreference"),
+        (r"\(\?<([=!])", "lookbehind"),
+        (r"\(\?[=!]", "lookahead"),
+        (r"\(\?>", "atomic-group"),
+    ]
     for expression, name in advanced:
         if re.search(expression, source):
-            return Unsupported("pcre2-"+name, source)
+            return Unsupported("pcre2-" + name, source)
     branches = _split(source)
     if len(branches) > 1:
         return Choice(tuple(_parse_pcre2(x) for x in branches))
@@ -395,15 +432,15 @@ def _parse_pcre2(source: str) -> Node:
             flush()
             items.append(Anchor("start"))
             i += 1
-        elif ch == "$" and i == len(source)-1:
+        elif ch == "$" and i == len(source) - 1:
             flush()
             items.append(Anchor("end"))
             i += 1
         elif ch == "\\":
             flush()
-            if i+1 >= len(source):
+            if i + 1 >= len(source):
                 raise RegexSyntaxError("trailing backslash")
-            escaped = source[i+1]
+            escaped = source[i + 1]
             if escaped in mapping:
                 node = mapping[escaped]
             elif escaped.isalnum():
@@ -415,24 +452,24 @@ def _parse_pcre2(source: str) -> Node:
             items.append(node)
         elif ch == ".":
             flush()
-            node, i = _quant(AnyChar(), source, i+1)
+            node, i = _quant(AnyChar(), source, i + 1)
             items.append(node)
         elif ch == "[":
             flush()
             end = _matching(source, i, "[", "]")
             if end is None:
                 raise RegexSyntaxError("unterminated character class")
-            node, i = _quant(_parse_class(source[i+1:end]), source, end+1)
+            node, i = _quant(_parse_class(source[i + 1 : end]), source, end + 1)
             items.append(node)
         elif ch == "(":
             flush()
             end = _matching(source, i)
             if end is None:
                 raise RegexSyntaxError("unbalanced parenthesis")
-            start = i+3 if source.startswith("(?:", i) else i+1
-            if source.startswith("(?", i) and start == i+1:
+            start = i + 3 if source.startswith("(?:", i) else i + 1
+            if source.startswith("(?", i) and start == i + 1:
                 return Unsupported("pcre2-special-group", source)
-            node, i = _quant(_parse_pcre2(source[start:end]), source, end+1)
+            node, i = _quant(_parse_pcre2(source[start:end]), source, end + 1)
             items.append(node)
         elif ch in "*+?{":
             return Unsupported("pcre2-orphan-quantifier", source)
@@ -448,7 +485,11 @@ def _parse_pcre2(source: str) -> Node:
     return _seq(items)
 
 
-_PARSERS = {Engine.PCRE2: _parse_pcre2, Engine.OSREGEX: _parse_osregex, Engine.SREGEX: _parse_sregex}
+_PARSERS = {
+    Engine.PCRE2: _parse_pcre2,
+    Engine.OSREGEX: _parse_osregex,
+    Engine.SREGEX: _parse_sregex,
+}
 
 
 def detect_engine(source: str) -> Engine | None:
@@ -498,10 +539,14 @@ def canonicalize(node: Node) -> Node:
     if isinstance(node, Sequence):
         flat: list[Node] = []
         for value in map(canonicalize, node.items):
-            flat.extend(value.items if isinstance(value, Sequence) else (value, ))
+            flat.extend(value.items if isinstance(value, Sequence) else (value,))
         merged: list[Node] = []
         for value in flat:
-            if isinstance(value, Literal) and merged and isinstance(merged[-1], Literal):
+            if (
+                isinstance(value, Literal)
+                and merged
+                and isinstance(merged[-1], Literal)
+            ):
                 merged[-1] = Literal(merged[-1].value + value.value)
             else:
                 merged.append(value)
@@ -509,7 +554,7 @@ def canonicalize(node: Node) -> Node:
     if isinstance(node, Choice):
         values: list[Node] = []
         for value in map(canonicalize, node.items):
-            values.extend(value.items if isinstance(value, Choice) else (value, ))
+            values.extend(value.items if isinstance(value, Choice) else (value,))
         unique = {semantic_key(x): x for x in values}
         ordered = tuple(unique[k] for k in sorted(unique))
         return ordered[0] if len(ordered) == 1 else Choice(ordered)
@@ -520,7 +565,7 @@ def canonicalize(node: Node) -> Node:
         if node.minimum == node.maximum == 0:
             return Sequence(())
         if node.minimum == node.maximum and node.minimum <= 32:
-            return canonicalize(Sequence((item, ) * node.minimum))
+            return canonicalize(Sequence((item,) * node.minimum))
         return Repeat(item, node.minimum, node.maximum)
     return node
 
@@ -558,7 +603,9 @@ def _coerce(pattern: Pattern | str, engine: Engine | str | None) -> Pattern:
 
 
 def fingerprint(pattern: Pattern | str, engine: Engine | str | None = None) -> str:
-    return hashlib.sha256(semantic_key(canonicalize(_coerce(pattern, engine).ast)).encode()).hexdigest()
+    return hashlib.sha256(
+        semantic_key(canonicalize(_coerce(pattern, engine).ast)).encode()
+    ).hexdigest()
 
 
 def _unsupported(node: Node) -> bool:
@@ -568,8 +615,9 @@ def _unsupported(node: Node) -> bool:
 def _has_case_sensitive_literal(node: Node) -> bool:
     return any(
         isinstance(value, Literal)
-        and any(character.isascii() and character.isalpha()
-                for character in value.value)
+        and any(
+            character.isascii() and character.isalpha() for character in value.value
+        )
         for value in walk(node)
     )
 
@@ -579,7 +627,12 @@ def _case_semantics_match(left: Pattern, right: Pattern, node: Node) -> bool:
     return not (one_is_pcre2 and _has_case_sensitive_literal(node))
 
 
-def compare(left, left_engine=None, right=None, right_engine=None) -> ComparisonResult:
+def compare(
+    left: Pattern | str,
+    left_engine: Engine | None = None,
+    right: Pattern | str | None = None,
+    right_engine: Engine | None = None,
+) -> ComparisonResult:
     if isinstance(left, Pattern) and isinstance(left_engine, Pattern) and right is None:
         lp, rp = left, left_engine
     else:
@@ -589,11 +642,20 @@ def compare(left, left_engine=None, right=None, right_engine=None) -> Comparison
     a, b = canonicalize(lp.ast), canonicalize(rp.ast)
     relation = (
         Relation.EQUIVALENT
-        if not _unsupported(a) and not _unsupported(b) and a == b
+        if not _unsupported(a)
+        and not _unsupported(b)
+        and a == b
         and _case_semantics_match(lp, rp, a)
         else Relation.UNKNOWN
     )
-    return ComparisonResult(relation, lp, rp, "canonical ASTs are identical" if relation == Relation.EQUIVALENT else "no safe proof")
+    return ComparisonResult(
+        relation,
+        lp,
+        rp,
+        "canonical ASTs are identical"
+        if relation == Relation.EQUIVALENT
+        else "no safe proof",
+    )
 
 
 def equivalent(*args, **kwargs) -> bool:
@@ -601,12 +663,12 @@ def equivalent(*args, **kwargs) -> bool:
 
 
 def _escape_pcre(value: str) -> str:
-    return re.sub(r'([\\.^$|?*+(){}\[\]])', r'\\\1', value)
+    return re.sub(r"([\\.^$|?*+(){}\[\]])", r"\\\1", value)
 
 
 def _class_char(ch: str) -> str:
     return {"\t": r"\t", "\r": r"\r", "\n": r"\n", "\v": r"\x0b", "\f": r"\f"}.get(
-        ch, "\\"+ch if ch in r"\]-^" else ch
+        ch, "\\" + ch if ch in r"\]-^" else ch
     )
 
 
@@ -617,7 +679,10 @@ def _emit_pcre(node: Node) -> str:
         shortcuts = {(_DIGITS, False): r"[0-9]"}
         return shortcuts.get(
             (node.chars, node.negated),
-            "["+("^" if node.negated else "")+"".join(map(_class_char, sorted(node.chars)))+"]",
+            "["
+            + ("^" if node.negated else "")
+            + "".join(map(_class_char, sorted(node.chars)))
+            + "]",
         )
     if isinstance(node, AnyChar):
         return "." if node.except_newline else r"(?s:.)"
@@ -629,9 +694,30 @@ def _emit_pcre(node: Node) -> str:
         return "|".join(map(_emit_pcre, node.items))
     if isinstance(node, Repeat):
         base = _emit_pcre(node.item)
-        base = base if isinstance(node.item, (CharSet, AnyChar)) or isinstance(node.item, Literal) and len(node.item.value) == 1 else f"(?:{base})"
-        q = "*" if (node.minimum, node.maximum) == (0, None) else "+" if (node.minimum, node.maximum) == (1, None) else "?" if (node.minimum, node.maximum) == (0, 1) else "{"+str(node.minimum)+("" if node.maximum == node.minimum else ","+("" if node.maximum is None else str(node.maximum)))+"}"
-        return base+q
+        base = (
+            base
+            if isinstance(node.item, (CharSet, AnyChar))
+            or isinstance(node.item, Literal)
+            and len(node.item.value) == 1
+            else f"(?:{base})"
+        )
+        q = (
+            "*"
+            if (node.minimum, node.maximum) == (0, None)
+            else "+"
+            if (node.minimum, node.maximum) == (1, None)
+            else "?"
+            if (node.minimum, node.maximum) == (0, 1)
+            else "{"
+            + str(node.minimum)
+            + (
+                ""
+                if node.maximum == node.minimum
+                else "," + ("" if node.maximum is None else str(node.maximum))
+            )
+            + "}"
+        )
+        return base + q
     raise ValueError("unsupported AST cannot be emitted exactly")
 
 
@@ -639,12 +725,16 @@ def _emit_os(node: Node) -> str:
     if isinstance(node, Literal):
         if any(x in node.value for x in "^*+"):
             raise ValueError("OS_Regex cannot represent literal ^, * or + exactly")
-        return "".join(("\\" if x in "$()\\|<" else "")+x for x in node.value)
+        return "".join(("\\" if x in "$()\\|<" else "") + x for x in node.value)
     classes: dict[tuple[frozenset[str], bool], str] = {
-        (_WORD_OS, False): r"\w", (_DIGITS, False): r"\d",
-        (_SPACE, False): r"\s", (_TAB, False): r"\t",
-        (_PUNCT_OS, False): r"\p", (_WORD_OS, True): r"\W",
-        (_DIGITS, True): r"\D", (_SPACE, True): r"\S",
+        (_WORD_OS, False): r"\w",
+        (_DIGITS, False): r"\d",
+        (_SPACE, False): r"\s",
+        (_TAB, False): r"\t",
+        (_PUNCT_OS, False): r"\p",
+        (_WORD_OS, True): r"\W",
+        (_DIGITS, True): r"\D",
+        (_SPACE, True): r"\S",
     }
     if isinstance(node, CharSet) and (node.chars, node.negated) in classes:
         return classes[(node.chars, node.negated)]
@@ -658,10 +748,14 @@ def _emit_os(node: Node) -> str:
         return "|".join(map(_emit_os, node.items))
     if isinstance(node, Repeat):
         base = _emit_os(node.item)
-        if len(base) == 2 and base.startswith("\\") and (node.minimum, node.maximum) in ((0, None), (1, None)):
-            return base+("*" if node.minimum == 0 else "+")
+        if (
+            len(base) == 2
+            and base.startswith("\\")
+            and (node.minimum, node.maximum) in ((0, None), (1, None))
+        ):
+            return base + ("*" if node.minimum == 0 else "+")
         if node.minimum == node.maximum and node.minimum <= 32:
-            return base*node.minimum
+            return base * node.minimum
         raise ValueError("OS_Regex cannot represent this repetition exactly")
     raise ValueError(f"OS_Regex cannot represent node exactly: {node!r}")
 
@@ -683,15 +777,20 @@ def _emit_s(node: Node) -> str:
 _EMITTERS = {Engine.PCRE2: _emit_pcre, Engine.OSREGEX: _emit_os, Engine.SREGEX: _emit_s}
 
 
-def convert(pattern, source=None, target=None) -> ConversionResult:
+def convert(
+    pattern: Pattern | str, source: Engine | None = None, target: Engine | None = None
+) -> ConversionResult:
     if target is None:
         raise TypeError("target engine is required")
     p, d = _coerce(pattern, source), Engine.coerce(target)
     node = canonicalize(p.ast)
     if _unsupported(node):
-        return ConversionResult(d, False, reason="source contains unsupported construct")
-    if ((p.engine == Engine.PCRE2) != (d == Engine.PCRE2)
-            and _has_case_sensitive_literal(node)):
+        return ConversionResult(
+            d, False, reason="source contains unsupported construct"
+        )
+    if (p.engine == Engine.PCRE2) != (
+        d == Engine.PCRE2
+    ) and _has_case_sensitive_literal(node):
         return ConversionResult(
             d,
             False,
@@ -702,11 +801,15 @@ def convert(pattern, source=None, target=None) -> ConversionResult:
     except ValueError as error:
         return ConversionResult(d, False, reason=str(error))
     if canonicalize(parse(text, d).ast) != node:
-        return ConversionResult(d, False, reason="round-trip semantic validation failed")
+        return ConversionResult(
+            d, False, reason="round-trip semantic validation failed"
+        )
     return ConversionResult(d, True, text)
 
 
-def alternatives(pattern, engine=None) -> tuple[Alternative, ...]:
+def alternatives(
+    pattern: Pattern | str, engine: Engine | None = None
+) -> tuple[Alternative, ...]:
     p = _coerce(pattern, engine)
     output = []
     for target in Engine:
@@ -717,17 +820,22 @@ def alternatives(pattern, engine=None) -> tuple[Alternative, ...]:
     return tuple(output)
 
 
-def find_duplicates(patterns: Iterable[Pattern | tuple[str, Engine | str]]) -> tuple[DuplicateGroup, ...]:
+def find_duplicates(
+    patterns: Iterable[Pattern | tuple[str, Engine | str]],
+) -> tuple[DuplicateGroup, ...]:
     buckets = defaultdict(list)
     for value in patterns:
         p = value if isinstance(value, Pattern) else parse(*value)
         if not _unsupported(p.ast):
             buckets[fingerprint(p)].append(p)
-    return tuple(DuplicateGroup(k, tuple(v)) for k, v in sorted(buckets.items()) if len(v) > 1)
+    return tuple(
+        DuplicateGroup(k, tuple(v)) for k, v in sorted(buckets.items()) if len(v) > 1
+    )
 
 
 class RegexComparer:
     """State-free facade over regex parsing, comparison, and conversion."""
+
     parse = staticmethod(parse)
     detect_engine = staticmethod(detect_engine)
     compare = staticmethod(compare)
