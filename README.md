@@ -150,7 +150,7 @@ For complex expressions, non-ASCII data, rules that depend on unusual backtracki
 
 ## Project status and maintainer policy
 
-This is an independent compatibility tool, not an official Wazuh product. Version 0.2.0 remains alpha while compatibility coverage is expanded and tested against real Wazuh usage.
+This is an independent compatibility tool, not an official Wazuh product. Version 0.3.0 remains alpha while compatibility coverage is expanded and tested against real Wazuh usage.
 
 The project is open-source, but upstream development is owner-maintained. You may use, modify, and fork it under the license, but unsolicited pull requests are not accepted. Bug reports and suggestions may be submitted through the issue tracker and will be considered at the maintainer's discretion. There is no commitment to provide support, response times, fixes, or continued maintenance.
 
